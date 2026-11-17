@@ -350,7 +350,10 @@ test("an ffmpeg that cannot be started or does not answer as ffmpeg when asked i
     const library = glibc && unloadable(at("nolib", "ffmpeg"), "library");
     if (library) {
       const said = printed(at("nolib", "ffmpeg"));
-      assert.match(said, new RegExp(`error while loading shared libraries: ${library.replace(/\./g, "\\.")}: cannot open shared object file`));
+      // The loader's own words, read before musicfit shortens the line: under
+      // a long TMPDIR the path alone fills most of the 120 characters kept.
+      const loader = spawnSync(at("nolib", "ffmpeg"), ["-version"], { encoding: "utf8" }).stderr;
+      assert.match(loader, new RegExp(`error while loading shared libraries: ${library.replace(/\./g, "\\.")}: cannot open shared object file`));
       cases.push(given(at("nolib", "ffmpeg"), said), onPath([at("nolib"), PATH], at("nolib", "ffmpeg"), said));
       // The one whose loader is missing comes first on PATH, and the system
       // passes over it to the one whose library is missing.
