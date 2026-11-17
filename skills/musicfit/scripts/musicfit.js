@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const { fit, files, outDir } = require("./lib/fit");
 const { underVideo } = require("./lib/report");
-const { probe, fpsText, LENGTH_LEAST, LENGTH_MOST } = require("./lib/video");
+const { probe, fpsText } = require("./lib/video");
 const { stopAll } = require("./lib/out");
 const version = require("./lib/version");
 
@@ -160,10 +160,13 @@ function parse(argv) {
   return options;
 }
 
-// The rules for the times, once each is known in seconds.
+// The rules for the times, once each is known in seconds. --length's 1 and
+// 3600 stay written out on their line: makersmcp reads its facts
+// length_min and length_max from it. video.js keeps the two as LENGTH_LEAST
+// and LENGTH_MOST, and a test holds them alike.
 function check(options) {
   if (!options.analyze) {
-    if (!(options.length >= LENGTH_LEAST && options.length <= LENGTH_MOST)) throw new Error("--length takes 1 second to an hour");
+    if (!(options.length >= 1 && options.length <= 3600)) throw new Error("--length takes 1 second to an hour");
     if (options.hit !== undefined && !(options.hit >= 0 && options.hit <= options.length)) throw new Error(`--hit has to fall inside --length (0 to ${options.length} s)`);
     if (options.hit !== undefined && options.hit > options.length - 0.5) throw new Error("--hit has to leave at least half a second after it, or the drop is not heard");
   }

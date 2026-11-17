@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const test = require("node:test");
-const { parse, parseTime, parseFps } = require("../skills/musicfit/scripts/musicfit");
+const { parse, check, parseTime, parseFps } = require("../skills/musicfit/scripts/musicfit");
 const { quoted } = require("../skills/musicfit/scripts/lib/audio");
 const { fixture, dir } = require("./helpers");
 
@@ -81,6 +81,33 @@ test("times in seconds, frames and minutes, and frame rates as decimals or fract
   assert.throws(() => parse(["song.mp3", "--length"]), /--length needs a value/);
   assert.throws(() => parse(["song.mp3", "--length", "30", "--wat"]), /Unknown option/);
   assert.equal(parse(["song.mp3", "--analyze"]).analyze, true);
+});
+
+// makersmcp states musicfit's numbers in its texts as facts, and its
+// tests/facts.test.mjs reads each from a line of musicfit's code, so a
+// release that writes one of those lines another way fails makersmcp's
+// suite. These are makersmcp 0.2.1's patterns, each with the value its kit
+// file states.
+const FACT_LINES = [
+  ["sample_rate", "lib/audio.js", /const RATE = (\d+);/, 48000],
+  ["channels", "lib/audio.js", /channels = (\d+)/, 2],
+  ["length_min", "musicfit.js", /options\.length >= (\d+) && options\.length <= \d+/, 1],
+  ["length_max", "musicfit.js", /options\.length >= \d+ && options\.length <= (\d+)/, 3600],
+  ["hit_tail", "musicfit.js", /options\.hit > options\.length - ([\d.]+)/, 0.5],
+  ["true_peak", "lib/render.js", /async function normalize\(audio, \{ lufs, peak = (-?[\d.]+) \}\)/, -1],
+  ["analyze_fps", "musicfit.js", /raw\.fps !== undefined \? parseFps\(raw\.fps\) : (\d+)/, 30],
+];
+
+test("the lines makersmcp reads musicfit's facts from still state them, and --length's two are the ones check() takes and fits() uses", () => {
+  for (const [fact, file, pattern, value] of FACT_LINES) {
+    const match = pattern.exec(fs.readFileSync(path.join(__dirname, "../skills/musicfit/scripts", file), "utf8"));
+    assert.ok(match, `${file} no longer has ${pattern}, where makersmcp reads ${fact}`);
+    assert.equal(Number(match[1]), value, fact);
+  }
+  const { LENGTH_LEAST, LENGTH_MOST } = require("../skills/musicfit/scripts/lib/video");
+  assert.deepEqual([LENGTH_LEAST, LENGTH_MOST], [1, 3600]);
+  for (const length of [LENGTH_LEAST, LENGTH_MOST]) assert.doesNotThrow(() => check({ length }), `${length}`);
+  for (const length of [LENGTH_LEAST - 0.001, LENGTH_MOST + 0.001]) assert.throws(() => check({ length }), { message: "--length takes 1 second to an hour" }, `${length}`);
 });
 
 test("--video and --video-sound: what they take, what they refuse, and frames that wait for the video's rate", () => {
