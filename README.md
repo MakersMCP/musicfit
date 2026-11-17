@@ -80,7 +80,7 @@ A video is refused before any work when it:
 - cannot be read, or is cut short or damaged
 - has no picture, or only a still one
 - holds a picture an MP4 cannot take without encoding it again (ProRes, DNxHD, VP8): give an H.264 or HEVC copy
-- is not `--length` long, and the message gives the length to use
+- is not `--length` long, and the message gives the length to use, or, for a video longer than the hour `--length` takes at most, asks for a cut of an hour or less
 - is a `video.mp4` musicfit made, unless `--video-sound drop` leaves out its sound and the fitted track in it
 
 ## What a failed run leaves

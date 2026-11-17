@@ -811,6 +811,10 @@ test("a video that cannot take the fit is refused before any work, and no folder
     [still, /musicfit: still\.png is a still picture, not a video\n$/],
     [prores, /musicfit: prores\.mov's picture is prores, which an MP4 cannot hold without encoding it again: give --video an H\.264 or HEVC copy of it\n$/],
     [film("film14", { seconds: 14 }), /musicfit: film14\.mp4 is 14\.00 s long \(350 frames at 25 fps\) and --length is 12\.00 s: give --length 14, or 350f\n$/],
+    [film("film3602", { fps: 1, seconds: 3602 }), /musicfit: film3602\.mp4 is 3602\.00 s long \(3602 frames at 1 fps\), longer than the hour --length takes at most: give --video a cut of an hour or less\n$/],
+    [film("film3601", { fps: 1, seconds: 3601 }), /musicfit: film3601\.mp4 is 3601\.00 s long \(3601 frames at 1 fps\) and --length is 12\.00 s: give --length 3600\n$/],
+    [film("film-hour-half", { fps: 2, seconds: 3600.5 }), /musicfit: film-hour-half\.mp4 is 3600\.50 s long \(7201 frames at 2 fps\) and --length is 12\.00 s: give --length 3600\n$/],
+    [film("film-half", { seconds: 0.48 }), /musicfit: film-half\.mp4 is 0\.48 s long \(12 frames at 25 fps\), shorter than the 1 second --length takes at least, so musicfit makes no fit under it\n$/],
     [empty, /musicfit: Cannot read .*empty\.mp4: it is empty\n$/],
     [headFirst, /musicfit: Cannot read .*cut-fast\.mp4: it is cut short or damaged \(ffmpeg could read \d+ frames, \d\.\d\d s of the 12\.00 s it says it holds\)\n$/],
     [headLast, /musicfit: Cannot read .*cut-last\.mp4: it is cut short or damaged, so ffmpeg finds no index in it\n$/],
@@ -824,6 +828,28 @@ test("a video that cannot take the fit is refused before any work, and no folder
     assert.ok(!fs.existsSync(out), `${video} made ${out}`);
   }
   assert.deepEqual(fs.readdirSync(dir).filter((e) => e.startsWith(".musicfit-")), []);
+});
+
+test("the length a refusal offers is one --length takes, and a video no such length comes within a frame of is refused as such", () => {
+  const { fits } = require("../skills/musicfit/scripts/lib/video");
+  const video = (seconds, fps, frames, constant = true) => ({ name: "v.mp4", seconds, fps, frames, constant });
+  // Within a frame past the hour: an hour takes it.
+  assert.doesNotThrow(() => fits(video(3600.5, 2, 7201), 3600, 2));
+  assert.doesNotThrow(() => fits(video(3601, 1, 3601), 3600, 1));
+  assert.throws(() => fits(video(3600.5, 2, 7201), 12, 2), { message: "v.mp4 is 3600.50 s long (7201 frames at 2 fps) and --length is 12.00 s: give --length 3600" });
+  assert.throws(() => fits(video(3601, 1, 3601), 12, 1), { message: "v.mp4 is 3601.00 s long (3601 frames at 1 fps) and --length is 12.00 s: give --length 3600" });
+  // Past it by more than a frame, whatever the length, the rate or how steady it is.
+  for (const [v, length, fps] of [[video(3602, 1, 3602), 3600, 1], [video(3601, 2, 7202), 3600, 2], [video(7200, 30, 216000), 12, 30], [video(7200, 25, 180000), 3600, 30]]) {
+    assert.throws(() => fits(v, length, fps), { message: `v.mp4 is ${v.seconds.toFixed(2)} s long (${v.frames} frames at ${v.fps} fps), longer than the hour --length takes at most: give --video a cut of an hour or less` });
+  }
+  assert.throws(() => fits(video(5000, 29.5, 147500, false), 12, 30), { message: "v.mp4 is 5000.00 s long, longer than the hour --length takes at most: give --video a cut of an hour or less" });
+  // Under a second by more than a frame, and within a frame of it.
+  assert.throws(() => fits(video(0.48, 25, 12), 1, 25), { message: "v.mp4 is 0.48 s long (12 frames at 25 fps), shorter than the 1 second --length takes at least, so musicfit makes no fit under it" });
+  assert.throws(() => fits(video(0.98, 50, 49), 12, 50), { message: "v.mp4 is 0.98 s long (49 frames at 50 fps) and --length is 12.00 s: give --length 1" });
+  assert.doesNotThrow(() => fits(video(0.98, 50, 49), 1, 50));
+  // Within the hour as before, in frames too.
+  assert.throws(() => fits(video(3599, 1, 3599), 12, 1), { message: "v.mp4 is 3599.00 s long (3599 frames at 1 fps) and --length is 12.00 s: give --length 3599, or 3599f" });
+  assert.throws(() => fits(video(14, 25, 350), 12, 30), { message: "v.mp4 is 14.00 s long (350 frames at 25 fps) and --length is 12.00 s: give --length 14, or 350f with --fps 25" });
 });
 
 test("an MP4 cut short inside its index is said to be, wherever in the index it stops, and one that lacks only the end of its index goes through", () => {

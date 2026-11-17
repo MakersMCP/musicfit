@@ -211,16 +211,29 @@ async function probe(file) {
   };
 }
 
+// What --length takes, in seconds: 1 second to an hour.
+const LENGTH_LEAST = 1;
+const LENGTH_MOST = 3600;
+
 // Refuses a video that is not `length` long to a frame of it: the sound
 // is cut or padded to the picture only within that frame. `fps` is the
-// rate frames count at here.
+// rate frames count at here. The length it offers is one --length takes,
+// and a video that no such length comes within a frame of is refused as
+// such, never sent to a length --length then refuses.
 function fits(info, length, fps) {
-  if (Math.abs(info.seconds - length) <= 1 / info.fps + 1e-6) return;
-  let frames = "";
-  // In frames too, when they mean one moment: at a steady rate.
-  if (info.constant) frames = `, or ${info.frames}f${Math.abs(fps - info.fps) > info.fps * 0.0005 ? ` with --fps ${fpsText(info.fps)}` : ""}`;
+  const frame = 1 / info.fps + 1e-6;
+  if (Math.abs(info.seconds - length) <= frame) return;
   const counted = info.constant ? ` (${info.frames} frames at ${fpsText(info.fps)} fps)` : "";
-  throw new Error(`${info.name} is ${info.seconds.toFixed(2)} s long${counted} and --length is ${length.toFixed(2)} s: give --length ${num(info.seconds, 3)}${frames}`);
+  const long = `${info.name} is ${info.seconds.toFixed(2)} s long${counted}`;
+  if (info.seconds - frame > LENGTH_MOST) throw new Error(`${long}, longer than the hour --length takes at most: give --video a cut of an hour or less`);
+  if (info.seconds + frame < LENGTH_LEAST) throw new Error(`${long}, shorter than the 1 second --length takes at least, so musicfit makes no fit under it`);
+  // Within a frame past an end of what --length takes, that end.
+  const give = Math.min(Math.max(info.seconds, LENGTH_LEAST), LENGTH_MOST);
+  let frames = "";
+  // In frames too, when they mean one moment: at a steady rate, and when
+  // the video's own count is the length offered.
+  if (info.constant && give === info.seconds) frames = `, or ${info.frames}f${Math.abs(fps - info.fps) > info.fps * 0.0005 ? ` with --fps ${fpsText(info.fps)}` : ""}`;
+  throw new Error(`${long} and --length is ${length.toFixed(2)} s: give --length ${num(give, 3)}${frames}`);
 }
 
 // The video's own sound on its timeline from `start`, where its picture
@@ -286,4 +299,4 @@ async function mux(file, sound, out, { picture, comment, start }) {
   if (why) throw new Error(`The video.mp4 this run wrote cannot be read back (${why}), so it was not put in place`);
 }
 
-module.exports = { probe, fits, ownSound, encodeAac, mux, mark, fpsText };
+module.exports = { probe, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST };
