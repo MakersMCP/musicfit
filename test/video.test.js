@@ -1002,6 +1002,22 @@ test("every length a refusal offers, in seconds or in frames, is one that a run 
   assert.ok(offers >= 2600 && inFrames >= 600 && refused >= 1300, `${offers} offers, ${inFrames} of them in frames, ${refused} refused`);
 });
 
+test("a video a frame and a millionth of a second under a second is refused as one under a second, and a run given --length 1 hears the same", () => {
+  // 49 frames at 50 fps on a timescale of microseconds, the last moved a
+  // microsecond early: 0.979999 s, where the two tests that decided this
+  // refusal rounded apart, and --length 1 was offered and refused again.
+  // The expression that moves it has no comma, as ffmpeg 4.4 splits -bsf
+  // at every one: floor(N/48) is 1 for the last packet, 48, and 0 before.
+  const base = film("s50-us", { fps: 50, seconds: 0.98, codec: ["-c:v", "mpeg4", "-q:v", "6", "-video_track_timescale", "1000000"] });
+  const video = at("s50-us-early.mp4");
+  if (!fs.existsSync(video)) ffmpeg(["-i", base, "-c", "copy", "-bsf:v", "setts=ts=TS-floor(N/48)", "-video_track_timescale", "1000000", video]);
+  for (const length of ["12", "1"]) {
+    const run = cli([fixture("house").file, "--length", length, "--video", video, "--out", at(`s50-us-${length}`)]);
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stderr, "musicfit: s50-us-early.mp4 is 0.98 s long (49 frames at 50 fps), shorter than the 1 second --length takes at least, so musicfit makes no fit under it\n", `--length ${length}`);
+  }
+});
+
 test("a run that follows a refusal's offer, its other options as they were, is taken and puts --hit given in frames where the first run put it", () => {
   const video = film("film14", { seconds: 14 });
   let runs = 0;
