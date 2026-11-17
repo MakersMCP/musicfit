@@ -880,6 +880,25 @@ test("the length a refusal offers is one --length takes, and a video no such len
   assert.throws(() => fits(video(12, 1 / 3, 4), 20, 0.333), { message: "v.mp4 is 12.00 s long (4 frames at 0.333 fps) and --length is 20.00 s: give --length 12, or 4f" });
 });
 
+test("the README and SKILL.md say what a refusal of a video that is not --length long gives, as fits() decides it", () => {
+  const { fits } = require("../skills/musicfit/scripts/lib/video");
+  const said = "the message gives the length to use, 3600 for a video at most a frame past the hour and 1 for one at most a frame under a second; a video more than a frame past the hour is asked for a cut of an hour or less, and one more than a frame under a second gets no fit";
+  for (const file of ["../README.md", "../skills/musicfit/SKILL.md"]) assert.ok(fs.readFileSync(path.join(__dirname, file), "utf8").includes(said), file);
+  // At 25 fps a frame is 0.04 s.
+  const refusal = (seconds) => {
+    try {
+      fits({ name: "v.mp4", seconds, fps: 25, frames: Math.round(seconds * 25), constant: true }, 12, 25);
+    } catch (err) {
+      return err.message;
+    }
+    return "";
+  };
+  assert.match(refusal(3600.04), /: give --length 3600$/);
+  assert.match(refusal(3600.08), /, longer than the hour --length takes at most: give --video a cut of an hour or less$/);
+  assert.match(refusal(0.96), /: give --length 1$/);
+  assert.match(refusal(0.92), /, shorter than the 1 second --length takes at least, so musicfit makes no fit under it$/);
+});
+
 test("every length a refusal offers, in seconds or in frames, is one that a run given it takes", () => {
   const { fits, fpsText, FPS_LEAST, FPS_MOST } = require("../skills/musicfit/scripts/lib/video");
   const { check, parseTime, parseFps } = require("../skills/musicfit/scripts/musicfit");
