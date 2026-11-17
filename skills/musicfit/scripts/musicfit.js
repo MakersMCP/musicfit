@@ -70,8 +70,6 @@ const VALUED = new Set(["--length", "--hit", "--drop", "--fps", "--voice", "--du
 // and each flag refuses it in its own words.
 const number = (value) => (/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(String(value).trim()) ? Number(value) : NaN);
 
-// video.js keeps the 1 and the 240 as FPS_LEAST and FPS_MOST, and a test
-// holds them alike.
 function parseFps(value) {
   const m = /^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(value);
   const fps = m ? Number(m[1]) / (m[2] ? Number(m[2]) : 1) : NaN;

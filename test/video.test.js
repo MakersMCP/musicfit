@@ -831,8 +831,8 @@ test("a video that cannot take the fit is refused before any work, and no folder
     assert.doesNotMatch(run.stderr, /Reading/);
     assert.ok(!fs.existsSync(out), `${video} made ${out}`);
   }
-  // With --fps 30 frames count at 30, and the video's 0.5 is a rate --fps
-  // does not take, so no count of its frames is offered.
+  // With --fps 30 frames count at 30, where the video's 8 are not its 16 s,
+  // so no count of its frames is offered.
   const slow = cli([fixture("house").file, "--length", "12", "--hit", "8", "--fps", "30", "--video", film("film-every-2s", { fps: "1/2", seconds: 16 }), "--out", at("refused-every-2s")]);
   assert.equal(slow.status, 1, slow.stderr);
   assert.match(slow.stderr, /musicfit: film-every-2s\.mp4 is 16\.00 s long \(8 frames at 0\.5 fps\) and --length is 12\.00 s: give --length 16\n$/);
@@ -857,9 +857,33 @@ test("the length a refusal offers is one --length takes, and a video no such len
   assert.throws(() => fits(video(0.48, 25, 12), 1, 25), { message: "v.mp4 is 0.48 s long (12 frames at 25 fps), shorter than the 1 second --length takes at least, so musicfit makes no fit under it" });
   assert.throws(() => fits(video(0.98, 50, 49), 12, 50), { message: "v.mp4 is 0.98 s long (49 frames at 50 fps) and --length is 12.00 s: give --length 1" });
   assert.doesNotThrow(() => fits(video(0.98, 50, 49), 1, 50));
+  // Past 200 fps a frame is under half a hundredth of a second, and past
+  // 2000 fps under half a thousandth: the length is written to as many
+  // places as tell it from the end it passes.
+  assert.throws(() => fits(video(3600.00458, 240, 864001), 12, 240), { message: "v.mp4 is 3600.005 s long (864001 frames at 240 fps), longer than the hour --length takes at most: give --video a cut of an hour or less" });
+  assert.throws(() => fits(video(2389 / 2400, 240, 239), 1, 240), { message: "v.mp4 is 0.995 s long (239 frames at 240 fps), shorter than the 1 second --length takes at least, so musicfit makes no fit under it" });
+  assert.throws(() => fits(video(9000001.125 / 2500, 2500, 9000001), 3600, 2500), { message: "v.mp4 is 3600.000450 s long (9000001 frames at 2500 fps), longer than the hour --length takes at most: give --video a cut of an hour or less" });
+  assert.throws(() => fits(video(2498.875 / 2500, 2500, 2499), 1, 2500), { message: "v.mp4 is 0.999550 s long (2499 frames at 2500 fps), shorter than the 1 second --length takes at least, so musicfit makes no fit under it" });
+  // A frame and a millionth of a second past the hour or under a second,
+  // where the two sides of the test for a frame can round apart: whatever
+  // a refusal says, a run given --length 3600 or 1 hears the same.
+  for (const [v, end] of [[video(0.979999, 50, 49), 1], [video(3600.07299370073, 13.7, 49321), 3600], [video(3600 + 1 / 3 + 1e-6, 3, 10801), 3600]]) {
+    const said = [12, end].map((length) => {
+      try {
+        fits(v, length, v.fps);
+      } catch (err) {
+        return err.message;
+      }
+      return "";
+    });
+    assert.equal(said[0], said[1], `${v.seconds}`);
+    assert.match(said[0], end === 1 ? /, shorter than the 1 second --length takes at least, so musicfit makes no fit under it$/ : /, longer than the hour --length takes at most: give --video a cut of an hour or less$/);
+  }
   // Within the hour as before, in frames too.
   assert.throws(() => fits(video(3599, 1, 3599), 12, 1), { message: "v.mp4 is 3599.00 s long (3599 frames at 1 fps) and --length is 12.00 s: give --length 3599, or 3599f" });
-  assert.throws(() => fits(video(14, 25, 350), 12, 30), { message: "v.mp4 is 14.00 s long (350 frames at 25 fps) and --length is 12.00 s: give --length 14, or 350f with --fps 25" });
+  // A count of frames goes only at the rate this run counts at: a run given
+  // it at another would read --hit, --drop and --fade in frames there too.
+  assert.throws(() => fits(video(14, 25, 350), 12, 30), { message: "v.mp4 is 14.00 s long (350 frames at 25 fps) and --length is 12.00 s: give --length 14" });
   // Frames are offered only as a run given them reads them. Without --fps
   // such a run counts at 56.943, where 204995 frames are more than an hour,
   // and with --fps 57000/1001 at the rate itself, where they are not.
@@ -870,9 +894,9 @@ test("the length a refusal offers is one --length takes, and a video no such len
   // the hour; one shown for two steps leaves it under a second.
   assert.throws(() => fits(video(3599.998, 30000 / 1001, 107893), 12, 29.97), { message: "v.mp4 is 3600.00 s long (107893 frames at 29.97 fps) and --length is 12.00 s: give --length 3599.998" });
   assert.throws(() => fits(video(1, 25, 24), 12, 25), { message: "v.mp4 is 1.00 s long (24 frames at 25 fps) and --length is 12.00 s: give --length 1" });
-  // A rate --fps does not take is never offered with it: the count goes
-  // alone, read at this run's --fps, when that still lands within a frame.
-  // A run with no --fps counts at the video's rate as fpsText writes it.
+  // The count is read at this run's rate and goes only when it lands
+  // within a frame there: the rate is the run's --fps, or with none the
+  // video's as fpsText writes it, which may be one --fps does not take.
   assert.throws(() => fits(video(12, 0.5, 6), 20, 30), { message: "v.mp4 is 12.00 s long (6 frames at 0.5 fps) and --length is 20.00 s: give --length 12" });
   assert.throws(() => fits(video(2, 1000, 2000), 12, 30), { message: "v.mp4 is 2.00 s long (2000 frames at 1000 fps) and --length is 12.00 s: give --length 2" });
   assert.throws(() => fits(video(481 / 240.4, 240.4, 481), 12, 240), { message: "v.mp4 is 2.00 s long (481 frames at 240.4 fps) and --length is 12.00 s: give --length 2.001, or 481f" });
@@ -899,52 +923,109 @@ test("the README and SKILL.md say what a refusal of a video that is not --length
   assert.match(refusal(0.92), /, shorter than the 1 second --length takes at least, so musicfit makes no fit under it$/);
 });
 
-test("every length a refusal offers, in seconds or in frames, is one that a run given it takes", () => {
-  const { fits, fpsText, FPS_LEAST, FPS_MOST } = require("../skills/musicfit/scripts/lib/video");
-  const { check, parseTime, parseFps } = require("../skills/musicfit/scripts/musicfit");
-  // video.js's rates are the ones --fps takes.
-  assert.deepEqual([FPS_LEAST, FPS_MOST], [1, 240]);
-  for (const fps of [FPS_LEAST, FPS_MOST]) assert.equal(parseFps(String(fps)), fps);
-  for (const fps of [FPS_LEAST - 0.001, FPS_MOST + 0.001]) assert.throws(() => parseFps(String(fps)), /--fps takes a frame rate/);
-  // A run given an offer reads it as musicfit.js does: at the --fps it
-  // names, else at this run's rate, the video's as fpsText writes it when
-  // no --fps was given. It then has to pass check() and fits().
-  const takes = (info, offer, fps) => {
-    const rate = offer.fps ? parseFps(offer.fps) : fps;
-    const length = parseTime("--length", offer.length, rate);
-    check({ length });
-    fits(info, length, rate);
+test("every length a refusal offers, in seconds or in frames, is one that a run given it takes at the rate it counts at, and a video refused with no offer is more than a frame past the hour or under a second", () => {
+  const { fits, fpsText } = require("../skills/musicfit/scripts/lib/video");
+  const { check, parseTime } = require("../skills/musicfit/scripts/musicfit");
+  const refusal = (info, length, fps) => {
+    try {
+      fits(info, length, fps);
+    } catch (err) {
+      return err.message;
+    }
+    return "";
   };
-  let offers = 0;
-  let inFrames = 0;
+  // A run given an offer reads it as musicfit.js does, at this run's rate:
+  // its --fps, else the video's as fpsText writes it. It then has to pass
+  // check() and fits().
+  const takes = (info, offer, fps) => {
+    const length = parseTime("--length", offer, fps);
+    check({ length });
+    fits(info, length, fps);
+  };
+  const pictures = [];
+  const picture = (seconds, rate, frames, rates) => pictures.push({ info: { name: "v.mp4", seconds, fps: rate, frames, constant: true }, rates });
+  // Around the hour and the second at usual rates and others, a step or
+  // two either side, the last frame shown for a twentieth of a step up to
+  // two and a half, counted at the video's rate and at others.
   for (const rate of [57000 / 1001, 30000 / 1001, 24000 / 1001, 60000 / 1001, 25, 30, 7 / 3, 13.7, 0.5, 1 / 3, 240.4, 1000]) {
     for (const seconds of [1, 3600]) {
       for (const shift of [-2, -1, 0, 1, 2]) {
         const frames = Math.round(seconds * rate) + shift;
         if (frames < 2) continue;
-        // The last frame shown for a twentieth of a step up to two and a half.
-        for (const last of [0.05, 0.5, 1, 1.5, 2.5]) {
-          const info = { name: "v.mp4", seconds: (frames - 1 + last) / rate, fps: rate, frames, constant: true };
-          for (const fps of [Number(fpsText(rate)), 25, 30, 240]) {
-            let said = "";
-            try {
-              fits(info, 12, fps);
-            } catch (err) {
-              said = err.message;
-            }
-            const offer = /give --length ([\d.]+)(?:, or (\d+f)(?: with --fps ([\d.]+))?)?$/.exec(said);
-            if (!offer) continue;
-            offers++;
-            assert.doesNotThrow(() => takes(info, { length: offer[1] }, fps), said);
-            if (!offer[2]) continue;
-            inFrames++;
-            assert.doesNotThrow(() => takes(info, { length: offer[2], fps: offer[3] }, fps), said);
-          }
-        }
+        for (const last of [0.05, 0.5, 1, 1.5, 2.5]) picture((frames - 1 + last) / rate, rate, frames, [Number(fpsText(rate)), 25, 30, 240]);
       }
     }
   }
-  assert.ok(offers >= 1500 && inFrames >= 600, `${offers} offers, ${inFrames} of them in frames`);
+  // Exactly a frame and a millionth of a second past the hour and under a
+  // second, the edge of the test for a frame, and a hair either side, at
+  // every whole rate --fps takes and some others.
+  for (const rate of [...Array.from({ length: 240 }, (_, i) => i + 1), 24000 / 1001, 30000 / 1001, 60000 / 1001, 13.7, 7 / 3, 240.4, 1000, 2500]) {
+    const frame = 1 / rate + 1e-6;
+    for (const edge of [3600 + frame, 1 - frame]) {
+      for (const hair of [0, 1e-9, -1e-9]) picture(edge + hair, rate, Math.max(2, Math.round((edge + hair) * rate)), [Number(fpsText(rate))]);
+    }
+  }
+  // Past 2000 fps a frame is shorter than the third place an offer is
+  // written to.
+  for (const rate of [2001, 2500, 4000, 10000]) {
+    for (const whole of [1, 5, 600, 3599]) {
+      for (const shift of [0, 1, 2]) {
+        const frames = Math.round(whole * rate) + shift;
+        for (const last of [0.05, 0.25, 0.75, 1, 1.25, 1.5, 2]) picture((frames - 1 + last) / rate, rate, frames, [Number(fpsText(rate))]);
+      }
+    }
+  }
+  let offers = 0;
+  let inFrames = 0;
+  let refused = 0;
+  for (const { info, rates } of pictures) {
+    for (const fps of rates) {
+      const said = refusal(info, 12, fps);
+      if (!said) continue;
+      assert.doesNotMatch(said, /with --fps/);
+      const offer = /: give --length ([\d.]+)(?:, or (\d+f))?$/.exec(said);
+      if (!offer) {
+        // No length --length takes comes within a frame of it: the end it
+        // passes does not, and a run given that end hears the same.
+        refused++;
+        assert.ok(info.seconds > 3600 || info.seconds < 1, said);
+        assert.equal(refusal(info, info.seconds > 3600 ? 3600 : 1, fps), said);
+        continue;
+      }
+      offers++;
+      assert.doesNotThrow(() => takes(info, offer[1], fps), said);
+      if (!offer[2]) continue;
+      inFrames++;
+      assert.doesNotThrow(() => takes(info, offer[2], fps), said);
+    }
+  }
+  assert.ok(offers >= 2600 && inFrames >= 600 && refused >= 1300, `${offers} offers, ${inFrames} of them in frames, ${refused} refused`);
+});
+
+test("a run that follows a refusal's offer, its other options as they were, is taken and puts --hit given in frames where the first run put it", () => {
+  const video = film("film14", { seconds: 14 });
+  let runs = 0;
+  // Each offer as the refusal words it: --length set to it, and --fps to
+  // the rate it names, if any; the rest as given.
+  const follow = (args, message, hit) => {
+    const refused = cli([fixture("house").file, "--length", "13", ...args, "--video", video, "--out", at("offer-refused")]);
+    assert.equal(refused.status, 1, refused.stderr);
+    assert.equal(refused.stderr, `musicfit: ${message}\n`);
+    for (const offer of /: give --length (.+)$/.exec(refused.stderr.trim())[1].split(", or ")) {
+      const [length, fps] = offer.split(" with --fps ");
+      const given = fps ? args.map((arg, i) => (args[i - 1] === "--fps" ? fps : arg)) : args;
+      const out = at(`offer-${++runs}`);
+      const run = cli([fixture("house").file, "--length", length, ...given, "--video", video, "--out", out]);
+      assert.equal(run.status, 0, `${offer}: ${run.stderr}`);
+      assert.equal(cuesOf(out).drop.time, hit, offer);
+    }
+  };
+  // At --fps 30 the video's 350 frames are not its 14 s, so only the
+  // seconds go, and --hit 300f stays at 10 s.
+  follow(["--fps", "30", "--hit", "300f"], "film14.mp4 is 14.00 s long (350 frames at 25 fps) and --length is 13.00 s: give --length 14", 10);
+  // At its own rate the count goes too, and --hit 300f stays at 12 s.
+  follow(["--fps", "25", "--hit", "300f"], "film14.mp4 is 14.00 s long (350 frames at 25 fps) and --length is 13.00 s: give --length 14, or 350f", 12);
+  assert.equal(runs, 3);
 });
 
 test("an MP4 cut short inside its index is said to be, wherever in the index it stops, and one that lacks only the end of its index goes through", () => {

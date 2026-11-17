@@ -211,48 +211,60 @@ async function probe(file) {
   };
 }
 
-// What --length takes, in seconds: 1 second to an hour; and what --fps
-// takes: 1 to 240. musicfit.js checks each with the numbers written out,
-// and a test holds these to those.
+// What --length takes, in seconds: 1 second to an hour. musicfit.js checks
+// it with the numbers written out, and a test holds these to those.
 const LENGTH_LEAST = 1;
 const LENGTH_MOST = 3600;
-const FPS_LEAST = 1;
-const FPS_MOST = 240;
 
 // Refuses a video that is not `length` long to a frame of it: the sound
 // is cut or padded to the picture only within that frame. `fps` is the
-// rate frames count at here. Each length it offers is one that a run given
-// it takes, and a video that no length --length takes comes within a frame
-// of is refused as such.
+// rate frames count at here. The length it offers is the one --length
+// takes nearest the video's, written to 3 places, or to 6 where 3 land
+// more than a frame off, as they can past 2000 fps. It is offered only
+// when `near` takes it, the very test a run given it meets, so that run
+// takes it. When neither is near, the video is more than a frame past the
+// hour or under a second, where no length --length takes comes within a
+// frame of it, and it is refused for that.
 function fits(info, length, fps) {
   const frame = 1 / info.fps + 1e-6;
   const near = (seconds) => Math.abs(info.seconds - seconds) <= frame;
   if (near(length)) return;
   const counted = info.constant ? ` (${info.frames} frames at ${fpsText(info.fps)} fps)` : "";
-  const long = `${info.name} is ${info.seconds.toFixed(2)} s long${counted}`;
-  if (info.seconds - frame > LENGTH_MOST) throw new Error(`${long}, longer than the hour --length takes at most: give --video a cut of an hour or less`);
-  if (info.seconds + frame < LENGTH_LEAST) throw new Error(`${long}, shorter than the 1 second --length takes at least, so musicfit makes no fit under it`);
-  // Within a frame past an end of what --length takes, that end.
   const give = Math.min(Math.max(info.seconds, LENGTH_LEAST), LENGTH_MOST);
-  throw new Error(`${long} and --length is ${length.toFixed(2)} s: give --length ${num(give, 3)}${inFrames(info, fps, near)}`);
+  const offer = [num(give, 3), num(give, 6)].find((text) => near(Number(text)));
+  if (offer === undefined) {
+    const long = `${info.name} is ${beyond(info.seconds, give)} s long${counted}`;
+    if (info.seconds > LENGTH_MOST) throw new Error(`${long}, longer than the hour --length takes at most: give --video a cut of an hour or less`);
+    throw new Error(`${long}, shorter than the 1 second --length takes at least, so musicfit makes no fit under it`);
+  }
+  throw new Error(`${info.name} is ${info.seconds.toFixed(2)} s long${counted} and --length is ${length.toFixed(2)} s: give --length ${offer}${inFrames(info, fps, near)}`);
 }
 
-// The video's own count of frames as a --length as well, ", or 350f", with
-// " with --fps 25" when this run counts frames at another rate and --fps
-// takes the video's: only at a steady rate, where a count names one
-// moment, and only when a run given it reads it as a length --length takes
-// that is `near` the video. A run given " with --fps" reads the count at
-// the video's rate as fpsText writes it, to three places, and one given
-// the count alone at this run's rate, which with no --fps is that same
-// rate: at 57000/1001 fps, 56.943, where the video's 204995 frames read as
-// more than an hour though it is shorter.
+// The video's length beside the end of what --length takes that it is
+// refused for passing: to 2 places as the other sentences give it, or to 3
+// or 6 where fewer would read as that end itself. Past 200 fps a frame is
+// under half a hundredth of a second, and past 2000 fps under half a
+// thousandth, so 2 or 3 places can round the length to the end; a video
+// refused this way passes the end by more than a frame and a millionth of
+// a second, which 6 places always show.
+function beyond(seconds, end) {
+  return [seconds.toFixed(2), seconds.toFixed(3)].find((text) => Number(text) !== end) || seconds.toFixed(6);
+}
+
+// The video's own count of frames as a --length as well, ", or 350f": only
+// at a steady rate, where a count names one moment, and only when a run
+// given it takes it. That run reads the count at the rate this run counts
+// frames at, `fps`, as a length --length takes that has to be `near` the
+// video. A count is never offered at another rate with an --fps of its
+// own: a run given it would read its --hit, --drop and --fade in frames at
+// that rate too, and move them; the length in seconds serves a run at any
+// rate. With no --fps a run counts at the video's rate as fpsText writes
+// it, to three places: at 57000/1001 fps, 56.943, where the video's 204995
+// frames read as more than an hour though it is shorter.
 function inFrames(info, fps, near) {
   if (!info.constant) return "";
-  const rate = Number(fpsText(info.fps));
-  const other = Math.abs(fps - info.fps) > info.fps * 0.0005 && rate >= FPS_LEAST && rate <= FPS_MOST;
-  const length = info.frames / (other ? rate : fps);
-  if (!(length >= LENGTH_LEAST && length <= LENGTH_MOST && near(length))) return "";
-  return `, or ${info.frames}f${other ? ` with --fps ${fpsText(info.fps)}` : ""}`;
+  const length = info.frames / fps;
+  return length >= LENGTH_LEAST && length <= LENGTH_MOST && near(length) ? `, or ${info.frames}f` : "";
 }
 
 // The video's own sound on its timeline from `start`, where its picture
@@ -318,4 +330,4 @@ async function mux(file, sound, out, { picture, comment, start }) {
   if (why) throw new Error(`The video.mp4 this run wrote cannot be read back (${why}), so it was not put in place`);
 }
 
-module.exports = { probe, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST, FPS_LEAST, FPS_MOST };
+module.exports = { probe, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST };
