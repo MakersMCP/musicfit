@@ -1,0 +1,6 @@
+[matroska,webm @ 0x5b0e72d30f80] File ended prematurely at pos. 600 (0x258)
+[matroska,webm @ 0x5b0e72d30f80] Duplicate element
+Truncating packet of size 214 to 60
+[in#0 @ 0x5b0e72d30cc0] Error opening input: Input/output error
+Error opening input file cut.mkv.
+Error opening input files: Input/output error

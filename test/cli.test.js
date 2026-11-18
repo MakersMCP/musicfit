@@ -591,7 +591,7 @@ test("a file that is not audio gets a clear error", () => {
   assert.match(run.stderr, /Cannot read|no audio/);
 });
 
-test("a track or a voice cut short is said to be: an M4A cut before its index or inside it; a WAV cut in its header, and three bytes of text named .mkv, are told as files ffmpeg cannot read", () => {
+test("a track or a voice cut short is said to be: an M4A cut before its index or inside it, or cut in its sound, and a Matroska file cut after its first bytes; a WAV cut in its header, and three bytes of text named .mkv, are told as files ffmpeg cannot read, and text named .aac, which ffmpeg cannot open, in ffmpeg's words", () => {
   const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
   const folder = path.join(dir, "cut-tracks");
   fs.mkdirSync(folder, { recursive: true });
@@ -605,11 +605,16 @@ test("a track or a voice cut short is said to be: an M4A cut before its index or
     fs.writeFileSync(at(name), bytes.subarray(0, size));
     return at(name);
   };
-  // An M4A as ffmpeg writes one, its index after its sound.
+  // An M4A as ffmpeg writes one, its index after its sound, and one with
+  // its index first.
   const song = make("song.m4a", "-c:a", "aac", "-b:a", "128k");
+  const first = make("song first.m4a", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart");
+  const mkv = make("song.mkv", "-c:a", "aac", "-b:a", "128k");
   const index = song.indexOf("moov", 0, "latin1") - 4;
-  assert.ok(index > 0);
+  const data = first.indexOf("mdat", 0, "latin1") - 4;
+  assert.ok(index > 0 && data > 0);
   fs.writeFileSync(at("notes.mkv"), "ok\n");
+  fs.writeFileSync(at("notes.aac"), "some notes\n");
   const noIndex = "it is cut short or damaged, so ffmpeg finds no index in it";
   const unknown = "it is not a kind of file ffmpeg reads, or it is cut short or damaged";
   const cases = [
@@ -617,8 +622,12 @@ test("a track or a voice cut short is said to be: an M4A cut before its index or
     [cut("in its index.m4a", song, index + 40), new RegExp(`^${noIndex}$`)],
     [cut("in its stsz.m4a", song, song.indexOf("stsz", index, "latin1") + 30), new RegExp(`^${noIndex}$`)],
     [cut("in its chunk offsets.m4a", song, song.indexOf("stco", index, "latin1") + 20), new RegExp(`^${noIndex}$`)],
+    [cut("first, in its sound.m4a", first, data + Math.floor((first.length - data) / 2)), /^it is cut short or damaged \(ffmpeg could read \d+\.\d\d s of its sound\)$/],
+    [cut("after its first bytes.mkv", mkv, 3000), /^it is cut short or damaged \(ffmpeg could read \d+\.\d\d s of its sound\)$/],
     [cut("in its header.wav", fs.readFileSync(fixture("house").file), 30), new RegExp(`^${unknown}$`)],
     [at("notes.mkv"), new RegExp(`^${unknown}$`)],
+    // ffmpeg's words, which differ from one version to the next.
+    [at("notes.aac"), /^ffmpeg: (?:Error opening input: )?End of file$/],
   ];
   const told = (run, file, why) => {
     assert.equal(run.status, 1, run.stderr);

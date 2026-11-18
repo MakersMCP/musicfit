@@ -1135,6 +1135,42 @@ test("an MP4 or a MOV cut short inside its index is said to be, wherever in the 
   refused(wide);
 });
 
+test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpeg only guessed the kind of is not: a Matroska file cut after 600 bytes, also in folders named with ffmpeg's words, an MPEG-TS whose picture ffmpeg knows no size of where it stops, an AVI cut where its frames start, three bytes of text named .mkv, and text named .aac, which ffmpeg cannot open", () => {
+  const cut = (from, name, size) => {
+    fs.mkdirSync(path.dirname(at(name)), { recursive: true });
+    fs.writeFileSync(at(name), fs.readFileSync(from).subarray(0, size));
+    return at(name);
+  };
+  const mkv = film("film12-sound-mkv", { sound: effects(), ext: "mkv" });
+  const ts = film("film12-sound-ts", { sound: effects(), ext: "ts" });
+  const avi = film("film12avi", { ext: "avi" });
+  const frames = fs.readFileSync(avi).indexOf("movi", 0, "latin1") - 8;
+  assert.ok(frames > 0, avi);
+  fs.writeFileSync(at("notes.mkv"), "ok\n");
+  fs.writeFileSync(at("notes.aac"), "some notes\n");
+  const unknown = "it is not a kind of file ffmpeg reads, or it is cut short or damaged";
+  for (const [video, why] of [
+    [cut(mkv, "cut-600.mkv", 600), /^it is cut short or damaged$/],
+    [cut(mkv, path.join("detected only with low score", "cut-600.mkv"), 600), /^it is cut short or damaged$/],
+    [cut(mkv, path.join("Invalid data found", "cut-600.mkv"), 600), /^it is cut short or damaged$/],
+    [cut(ts, "cut-600.ts", 600), /^it is cut short or damaged, so ffmpeg finds no frames in it$/],
+    [cut(avi, "cut-at-frames.avi", frames), new RegExp(`^${unknown}$`)],
+    [at("notes.mkv"), new RegExp(`^${unknown}$`)],
+    // ffmpeg's words, which differ from one version to the next.
+    [at("notes.aac"), /^ffmpeg: (?:Error opening input: )?End of file$/],
+    [cut(at("notes.aac"), path.join("Invalid data found", "notes.aac"), 100), /^ffmpeg: (?:Error opening input: )?End of file$/],
+  ]) {
+    const out = at(`refused-${path.basename(video)}`);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--out", out]);
+    assert.equal(run.status, 1, `${video}: ${run.stderr}`);
+    const said = run.stderr.split("\n").filter(Boolean);
+    assert.equal(said.length, 1, run.stderr);
+    assert.ok(said[0].startsWith(`musicfit: Cannot read ${video}: `), run.stderr);
+    assert.match(said[0].slice(`musicfit: Cannot read ${video}: `.length), why, video);
+    assert.ok(!fs.existsSync(out), video);
+  }
+});
+
 test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track it has no audio stream", () => {
   const avif = at("still.avif");
   fs.copyFileSync(path.join(__dirname, "fixtures", "still.avif"), avif);
@@ -1154,6 +1190,26 @@ test("a whole MP4 behind an ID3v2 tag is fitted by an ffmpeg that reads past the
     assert.equal(run.status, 1, run.stderr);
     assert.equal(run.stderr, `musicfit: Cannot read ${tagged}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag\n`);
   } else assert.equal(run.status, 0, run.stderr);
+});
+
+test("a video whose own sound is cut short is refused when that sound would be laid in, and goes with --video-sound drop", () => {
+  // Written in fragments, each with the picture's frames first, then the
+  // sound's, here a tone that fills some kilobytes of each: cut a kilobyte
+  // before the end of the last one, all of the picture is there, as the
+  // run with drop shows.
+  const frag = film("frag-tone", { sound: bed(), codec: ["-c:v", "mpeg4", "-q:v", "6", "-movflags", "frag_keyframe+empty_moov+default_base_moof"] });
+  const bytes = fs.readFileSync(frag);
+  const data = topBoxes(bytes).filter((box) => box.kind === "mdat").pop();
+  const cut = at("frag-tone cut.mp4");
+  fs.writeFileSync(cut, bytes.subarray(0, data.at + data.size - 1000));
+  const keep = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", cut, "--video-sound", "keep", "--out", at("frag-cut-keep")]);
+  assert.equal(keep.status, 1, keep.stderr);
+  const last = keep.stderr.split("\n").filter(Boolean).pop();
+  assert.ok(last.startsWith(`musicfit: Cannot read ${cut}: `), keep.stderr);
+  assert.match(last.slice(`musicfit: Cannot read ${cut}: `.length), /^it is cut short or damaged \(ffmpeg could read \d+\.\d\d s of its sound\)$/);
+  assert.ok(!fs.existsSync(at("frag-cut-keep")));
+  const drop = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", cut, "--video-sound", "drop", "--out", at("frag-cut-drop")]);
+  assert.equal(drop.status, 0, drop.stderr);
 });
 
 test("a video musicfit made is refused as --video while its sound would be laid in, naming the video it was made from when its cues.json is beside it, and taken with --video-sound drop", () => {

@@ -13,9 +13,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { RATE, run, decode, gone, where } = require("./audio");
+const { RATE, run, decode, gone, where, reason } = require("./audio");
 const { blocks } = require("./breathe");
-const { damaged, boxes, ownLines, noIndex, indexError, unknown } = require("./unread");
+const { damaged, boxes, ownLines, noIndex, indexError, unknown, unopened, unnamed } = require("./unread");
 
 const num = (x, digits) => String(Number(x.toFixed(digits)));
 
@@ -46,6 +46,16 @@ function inputSection(said) {
   return to < 0 ? rest : rest.slice(0, to);
 }
 
+// Whether ffmpeg lists a picture it knows nothing of the size of: where a
+// file stops before it says, ffmpeg 4.4 will not even start to copy the
+// picture, and ffmpeg 8 and 9 copy none of its frames. Its kind, if known,
+// comes before the first comma, then "none" where its pixels are named, and
+// no size such as ", 160x96" after. A stream's number in the file, as in
+// [0x100], is no size.
+function sizeless(input) {
+  return input.split("\n").some((line) => /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(line) && !/, \d+x\d+\b/.test(line));
+}
+
 // The refusal of a video ffmpeg finds no frame of, which a file cut short
 // can list a picture with.
 const noFrames = (file) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no frames in it`);
@@ -54,18 +64,22 @@ const noFrames = (file) => new Error(`Cannot read ${file}: it is cut short or da
 // failed, `said`, and from the file's own boxes, `layout` (see boxes() in
 // unread.js): an Error, or null when ffmpeg's lines name none of these.
 // Only ffmpeg's own lines are read for them, with the file's name taken
-// out.
+// out. ffmpeg's words for a file that stops early or holds a broken packet
+// count only where ffmpeg did not say it guessed what the file is: three
+// bytes of text named .mkv are read as a Matroska file that ended early.
 function unread(file, said, layout) {
   const name = path.basename(file);
-  const own = ownLines(said, where(file));
+  const at = where(file);
+  const own = ownLines(said, at);
   const index = noIndex(own, layout);
   if (index === "picture") return new Error(`${name} is a still picture, not a video`);
   if (index) return indexError(file, index);
-  if (/Invalid data found/.test(own)) return unknown(file);
   if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
-  // A picture ffmpeg 4.4 will not even start to copy, as nothing is known
-  // of it yet where the file stops; ffmpeg 8 copies none of its frames.
-  if (/^\s*Stream #0:\d+.*: Video: none, none/m.test(inputSection(said))) return noFrames(file);
+  if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
+  if (/Invalid data found/.test(own)) return unknown(file);
+  if (sizeless(inputSection(said))) return noFrames(file);
+  // A file ffmpeg could not open, in ffmpeg's words for it.
+  if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);
   return null;
 }
 
@@ -94,7 +108,7 @@ async function probe(file) {
     crc = Buffer.concat(chunks).toString("utf8");
     said = stderr;
   } catch (err) {
-    if (err.unstarted) throw err;
+    if (err.unstarted || err.stopped) throw err;
     const why = err.stderr || err.message;
     if (/No such file|does not exist/.test(why) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
     throw unread(file, why, layout) || err;

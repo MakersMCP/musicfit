@@ -1,0 +1,6 @@
+[in#0 @ 0x560755e1ac40] File ended prematurely at pos. 600 (0x258)
+[in#0 @ 0x560755e1ac40] Duplicate element
+Truncating packet of size 214 to 60
+[in#0 @ 0x560755e1a940] Error opening input: Input/output error
+Error opening input file cut.mkv.
+Error opening input files: Input/output error

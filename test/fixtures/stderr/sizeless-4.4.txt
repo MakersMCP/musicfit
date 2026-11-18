@@ -1,0 +1,19 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x562a5a21be80] Could not find codec parameters for stream 0 (Video: mpeg4 (mp4v / 0x7634706D), none, 330 kb/s): unspecified size
+Consider increasing the value for the 'analyzeduration' (0) and 'probesize' (5000000) options
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'cut.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2mp41
+  Duration: 00:00:12.00, bitrate: 330 kb/s
+  Stream #0:0(und): Video: mpeg4 (mp4v / 0x7634706D), none, 330 kb/s, SAR 1:1 DAR 0:0, 12800 tbr, 12800 tbn, 12800 tbc (default)
+    Metadata:
+      handler_name    : VideoHandler
+      vendor_id       : [0][0][0][0]
+      encoder         : Lavc62.11.100 mpeg4
+[framecrc @ 0x562a5a224240] dimensions not set
+Could not write header for output file #0 (incorrect codec parameters ?): Invalid argument
+Error initializing output stream 0:0 -- 
+Stream mapping:
+  Stream #0:0 -> #0:0 (copy)
+    Last message repeated 1 times

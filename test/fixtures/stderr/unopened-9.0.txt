@@ -1,0 +1,4 @@
+[in#0 @ 0x5e64ba9b9c40] Format aac detected only with low score of 1, misdetection possible!
+[in#0 @ 0x5e64ba9b9940] Error opening input: End of file
+Error opening input file notes.aac.
+Error opening input files: End of file

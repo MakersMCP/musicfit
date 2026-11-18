@@ -167,4 +167,16 @@ function indexError(file, index) {
 // or damaged in its first bytes alike.
 const unknown = (file) => new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
 
-module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, unknown };
+// Whether ffmpeg says it could not open the file it was given as `at`:
+// ffmpeg 6.1 and newer name it in "Error opening input file <file>.", and
+// 4.4 to 6.0 start the line that says why with it.
+function unopened(said, at) {
+  const lines = `\n${said}`;
+  return lines.includes(`\nError opening input file ${at}.`) || lines.includes(`\n${at}: `);
+}
+
+// What ffmpeg printed with the name `at` taken out, also where 4.4 to 6.0
+// start a line with it, so that the line that says why names no path.
+const unnamed = (said, at) => said.split(`${at}: `).join("").split(at).join("");
+
+module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, unknown, unopened, unnamed };

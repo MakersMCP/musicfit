@@ -357,7 +357,7 @@ test("a track or a video is said to be missing only when it is: a No such file o
   }
 });
 
-test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any system, together with the file's own boxes: an MP4 or a MOV with no whole index, also behind ID3v2 tags or a box no format knows, or a MOV that starts with its wide box; a HEIF picture; and a whole MP4 behind an ID3v2 tag, which ffmpeg 9 does not read", () => {
+test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any system, together with the file's own boxes: an MP4 or a MOV with no whole index, also behind ID3v2 tags or a box no format knows, or a MOV that starts with its wide box; a HEIF picture; a whole MP4 behind an ID3v2 tag, which ffmpeg 9 does not read; a file that ended early, unless ffmpeg only guessed what it is; a picture of no size; and a file ffmpeg could not open", () => {
   const { unread } = require("../skills/musicfit/scripts/lib/video");
   const { unreadSound, where } = require("../skills/musicfit/scripts/lib/audio");
   const { boxes } = require("../skills/musicfit/scripts/lib/unread");
@@ -395,9 +395,9 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   const others = [put("notes.txt", Buffer.from("some notes\n")), put("zeros.mp4", Buffer.alloc(64))];
   // The lines a version printed, with the name of the file it was given
   // then put back as this file's whole name, as musicfit gives files.
-  const NAMED = { "cut-index": "cut.mp4", "cut-index-eof": "cut.mp4", "no-index": "cut.mp4", "low-score": "notes.mp4", "tagged-index": "tagged.mp4", heif: "still.avif" };
-  const read = (kind, version, file) => {
-    const said = fs.readFileSync(path.join(FIXTURES, "stderr", `${kind}-${version}.txt`), "utf8").split(NAMED[kind]).join(where(file));
+  const NAMED = { "cut-index": "cut.mp4", "cut-index-eof": "cut.mp4", "no-index": "cut.mp4", "low-score": "notes.mp4", "tagged-index": "tagged.mp4", heif: "still.avif", sizeless: "cut.mp4", ended: "cut.mkv", "guessed-ended": "notes.mkv", unopened: "notes.aac" };
+  const read = (kind, version, file, change = (lines) => lines) => {
+    const said = change(fs.readFileSync(path.join(FIXTURES, "stderr", `${kind}-${version}.txt`), "utf8")).split(NAMED[kind]).join(where(file));
     const layout = boxes(where(file));
     const message = (err) => (err ? err.message : null);
     return { video: message(unread(file, said, layout)), sound: message(unreadSound(file, said, layout)) };
@@ -410,14 +410,22 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
       for (const file of mp4s) assert.deepEqual(read(kind, version, file), index(file), `${kind}-${version}: ${file}`);
     }
     // "error reading header", which other demuxers may say too, and "moov
-    // atom not found" of a file that is no MP4: ffmpeg's own line says why.
+    // atom not found" of a file that is no MP4.
     for (const file of others) {
       assert.deepEqual(read("cut-index", version, file), unknown(file), `cut-index-${version}: ${file}`);
       assert.deepEqual(read("no-index", version, file), unknown(file), `no-index-${version}: ${file}`);
-      assert.deepEqual(read("cut-index-eof", version, file), both(null), `cut-index-eof-${version}: ${file}`);
+      assert.deepEqual(read("cut-index-eof", version, file), both(`Cannot read ${file}: ffmpeg: ${version === "4.4" ? "error reading header" : "Error opening input: End of file"}`), `cut-index-eof-${version}: ${file}`);
     }
     const notes = put("notes.mp4", Buffer.from("not a video\n"));
     assert.deepEqual(read("low-score", version, notes), unknown(notes), `low-score-${version}`);
+    // A Matroska file that ended early: as a sound, ffmpeg's words for it
+    // are not read, as at -v error ffmpeg does not say when it guessed.
+    const cut = put("cut.mkv", Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(596));
+    assert.deepEqual(read("ended", version, cut), { video: `Cannot read ${cut}: it is cut short or damaged`, sound: `Cannot read ${cut}: ffmpeg: ${version === "4.4" ? "" : "Error opening input: "}Input/output error` }, `ended-${version}`);
+    const guessed = put("notes.mkv", Buffer.from("ok\n"));
+    assert.deepEqual(read("guessed-ended", version, guessed), unknown(guessed), `guessed-ended-${version}`);
+    const aac = put("notes.aac", Buffer.from("some notes\n"));
+    assert.deepEqual(read("unopened", version, aac), both(`Cannot read ${aac}: ffmpeg: ${version === "4.4" ? "" : "Error opening input: "}End of file`), `unopened-${version}`);
   }
   // ffmpeg 4.4 reads no HEIF picture: an AVIF or a HEIC has a meta box and
   // no moov. An MP4 with a meta box and no moov, by its brands no HEIF,
@@ -438,6 +446,21 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   }
   const gone = put("tagged gone.mp4", id3(), ftyp, box("mdat", Buffer.alloc(32)));
   assert.deepEqual(read("tagged-index", "9.0", gone), index(gone));
+  // A picture ffmpeg 4.4 knows no size of, which it will not copy; ffmpeg
+  // 8 and 9 copy none of its frames. The tags it lists are not lines of its
+  // own, whatever words they hold.
+  const sizeless = put("sizeless.mp4", ftyp, moov);
+  const frames = `Cannot read ${sizeless}: it is cut short or damaged, so ffmpeg finds no frames in it`;
+  assert.equal(read("sizeless", "4.4", sizeless).video, frames);
+  const noted = (lines) => lines.replace(/^( +)handler_name +: VideoHandler$/m, "$&\n$1comment         : a note that ends in: corrupt input packet in stream 0");
+  assert.match(noted(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8")), /^ +comment +: a note that ends in: corrupt input packet in stream 0$/m);
+  assert.equal(read("sizeless", "4.4", sizeless, noted).video, frames);
+  // A picture listed with its size is not one ffmpeg knows nothing of, and
+  // an MPEG-TS stream's number in the file, as [0x100], is no size.
+  const stream = /^( +)Stream #0:0\(und\): Video: .*$/m;
+  assert.match(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8"), stream);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0(und): Video: mpeg4 (mp4v / 0x7634706D), none, 160x96, 330 kb/s, 12800 tbr")).video, null);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0[0x100]: Video: mpeg4 ([16][0][0][0] / 0x0010), none, 90k tbr, 90k tbn, 90k tbc")).video, frames);
 });
 
 test("the file's own boxes tell an MP4's index cut short as ffmpeg would read them: a moov that runs past the end of the file is cut, unless all it lacks is part of its last box, a udta, and sizes of 8 bytes and of 0 are read; a kind ffmpeg guesses an MP4 by counts only in the first MiB, past ID3v2 tags; a HEIF picture is told by its brands", () => {
@@ -508,6 +531,32 @@ test("the file's own boxes tell an MP4's index cut short as ffmpeg would read th
   assert.equal(layout(box("ftyp", Buffer.from("avif\0\0\0\0avifmif1", "latin1")), meta, mdat, whole).picture, false);
   // Only a regular file is read.
   assert.deepEqual(boxes(folder), { mp4: false, tagged: false, index: null, picture: false });
+});
+
+test("an ffmpeg stopped by a signal while it reads a video or a sound leaves a stopped run, whatever it said of the file before", posix, async () => {
+  const { decode } = require("../skills/musicfit/scripts/lib/audio");
+  const { probe } = require("../skills/musicfit/scripts/lib/video");
+  const { file } = fixture("house");
+  const real = process.env.FFMPEG_PATH ? path.resolve(process.env.FFMPEG_PATH) : spawnSync("sh", ["-c", "command -v ffmpeg"], { encoding: "utf8" }).stdout.trim();
+  const standIn = path.join(outDir("stopped-reading"), "ffmpeg");
+  fs.mkdirSync(path.dirname(standIn), { recursive: true });
+  // Lines a read of a file that ended early starts with, then the end of
+  // an ffmpeg that Ctrl-C stopped.
+  fs.writeFileSync(standIn, `#!/bin/sh\nif [ "$1" = -version ]; then exec "${real}" -version; fi\ncat >&2 <<'LINES'\n[matroska,webm @ 0x1] File ended prematurely\nError opening input file ${file}.\nExiting normally, received signal 2.\nLINES\nexit 255\n`);
+  fs.chmodSync(standIn, 0o755);
+  const was = process.env.FFMPEG_PATH;
+  process.env.FFMPEG_PATH = standIn;
+  try {
+    for (const read of [probe, decode]) {
+      await assert.rejects(read(file), (err) => {
+        assert.ok(err.stopped, err.message);
+        return true;
+      });
+    }
+  } finally {
+    if (was === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = was;
+  }
 });
 
 test("a file that is no video is not taken for an MP4 cut short when its name, the name of its folder or its tags hold ffmpeg's words for one", async () => {
