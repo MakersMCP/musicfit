@@ -17,6 +17,11 @@ const { fixture, dir } = require("./helpers");
 const CLI = path.resolve(__dirname, "../skills/musicfit/scripts/musicfit.js");
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const RATE = 48000;
+// The option that keeps the frames a filter leaves at their own times, as
+// the test's own ffmpeg takes it: -fps_mode on ffmpeg 5.1 and newer, as
+// ffmpeg 9 no longer takes -vsync, and -vsync on ffmpeg 4.4, which has no
+// -fps_mode. Its help lists the options it takes.
+const FPS_MODE = /^-fps_mode\b/m.test(spawnSync(FFMPEG, ["-hide_banner", "-h", "long"], { encoding: "utf8" }).stdout) ? "-fps_mode" : "-vsync";
 
 const cli = (args) => spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
 const at = (name) => path.join(dir, name);
@@ -1158,7 +1163,7 @@ test("frames count at the video's rate without --fps, another --fps is noted, an
 
   // Every seventh frame left out and every fifth one 12 ms late, in a
   // timebase of milliseconds: frames come at no steady rate.
-  const vfr = film("vfr", { fps: 30, filter: ["-vf", "select='not(eq(mod(n\\,7)\\,3))',settb=1/1000,setpts='PTS+if(eq(mod(N\\,5)\\,2)\\,12\\,0)'", "-vsync", "vfr", "-enc_time_base", "1/1000"] });
+  const vfr = film("vfr", { fps: 30, filter: ["-vf", "select='not(eq(mod(n\\,7)\\,3))',settb=1/1000,setpts='PTS+if(eq(mod(N\\,5)\\,2)\\,12\\,0)'", FPS_MODE, "vfr", "-enc_time_base", "1/1000"] });
   const inFrames = cli([fixture("house").file, "--length", "360f", "--video", vfr, "--out", at("vfr-frames")]);
   assert.equal(inFrames.status, 1);
   assert.match(inFrames.stderr, /musicfit: vfr\.mp4 has no steady frame rate, so a time in frames does not name one moment of it: give --length in seconds, or give --fps\n$/);
@@ -1175,7 +1180,7 @@ test("frames count at the video's rate without --fps, another --fps is noted, an
 test("frames left out of a steady rate are places in it: a recording that dropped frames, and a cut that keeps a frame from after its end, count at their rate", async () => {
   const { probe } = require("../skills/musicfit/scripts/lib/video");
   // Every seventh frame left out: the others stay on the 30 fps grid.
-  const dropped = film("dropped", { fps: 30, filter: ["-vf", "select='not(eq(mod(n\\,7)\\,3))'", "-vsync", "vfr"] });
+  const dropped = film("dropped", { fps: 30, filter: ["-vf", "select='not(eq(mod(n\\,7)\\,3))'", FPS_MODE, "vfr"] });
   const info = await probe(dropped);
   assert.deepEqual([info.constant, info.fps, info.frames, info.seconds], [true, 30, 360, 12]);
   const out = at("dropped-fit");
@@ -1186,7 +1191,7 @@ test("frames left out of a steady rate are places in it: a recording that droppe
   assert.doesNotMatch(run.stdout, /steady/);
   // As ffmpeg -ss 2.5 -t 6 -c copy can leave an H.264 cut: its last frame
   // comes three thirtieths after the one before, and the cut plays 6.1 s.
-  const cut = film("tail-gap", { fps: 30, seconds: 6.1, filter: ["-vf", "select='not(between(n\\,180\\,181))'", "-vsync", "vfr"] });
+  const cut = film("tail-gap", { fps: 30, seconds: 6.1, filter: ["-vf", "select='not(between(n\\,180\\,181))'", FPS_MODE, "vfr"] });
   const tail = await probe(cut);
   assert.deepEqual([tail.constant, tail.fps, tail.frames, Number(tail.seconds.toFixed(3))], [true, 30, 183, 6.1]);
   const short = cli([fixture("house").file, "--length", "6", "--video", cut, "--out", at("tail-gap-6")]);
