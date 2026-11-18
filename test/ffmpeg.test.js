@@ -1,8 +1,8 @@
 "use strict";
 
-// What musicfit asks of ffmpeg works on ffmpeg 4.4 (Ubuntu 22.04's, which
-// the hosted service runs) as on newer ones, and an ffmpeg that fails is
-// named with the line that says why.
+// What musicfit asks of ffmpeg works on ffmpeg 4.4 (Ubuntu 22.04's, the
+// oldest it takes) as on newer ones, the hosted service's 9.0.2 among them,
+// and an ffmpeg that fails is named with the line that says why.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -38,7 +38,7 @@ test("an ffmpeg that refuses a value of the loudness meter is named with that li
   assert.doesNotMatch(run.stderr, /Conversion failed|Error opening output files/);
 });
 
-test("the line that says why is found in what ffmpeg 4.4, 6.1 and 8 print", () => {
+test("the line that says why is found in what ffmpeg 4.4, 6.1, 8 and 9 print", () => {
   const said = (name) => fs.readFileSync(path.join(FIXTURES, "stderr", `${name}.txt`), "utf8");
   const cases = {
     // Written in two parts, so the meter's settings in it are not read as a framelog value musicfit asks for.
@@ -59,6 +59,14 @@ test("the line that says why is found in what ffmpeg 4.4, 6.1 and 8 print", () =
     // when the system starts no more threads for it.
     "closed-pipe-4.4": "ffmpeg: Error writing trailer of pipe:1: Broken pipe",
     "no-threads-8.0": "ffmpeg: Error sending frames to consumers: Resource temporarily unavailable",
+    // ffmpeg 9.0.2, the hosted service's, as it printed each of them.
+    "framelog-9.0": "ffmpeg: Error applying option 'framelog' to filter 'ebur128': Invalid argument",
+    "no-folder-9.0": "ffmpeg: Error opening output /nonexistent/dir/fitted.wav: No such file or directory",
+    "disk-full-9.0": "ffmpeg: Error writing trailer: No space left on device",
+    "no-input-9.0": "ffmpeg: Error opening input: No such file or directory",
+    "encoder-9.0": "ffmpeg: Unknown encoder 'nosuchencoder'",
+    "closed-pipe-9.0": "ffmpeg: Error writing trailer: Broken pipe",
+    "no-threads-9.0": "ffmpeg: pthread_create() failed: Resource temporarily unavailable",
   };
   for (const [name, line] of Object.entries(cases)) assert.equal(reason(said(name), 1), line, name);
   // A line with no word of an error, as a wrapper or a guard may print, and nothing at all.

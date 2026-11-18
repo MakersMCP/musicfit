@@ -1,0 +1,22 @@
+[aist#0:0/pcm_s16le @ 0x641583f090c0] Guessed Channel Layout: stereo
+Input #0, wav, from 'track.wav':
+  Metadata:
+    encoder         : Lavf63.1.102
+  Duration: 00:00:20.00, bitrate: 1411 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, stereo, s16, 1411 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (copy)
+Output #0, framecrc, to 'pipe:1':
+  Metadata:
+    encoder         : Lavf63.1.102
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 44100 Hz, stereo, s16, 1411 kb/s
+[aost#0:0/copy @ 0x641583fa39c0] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/framecrc @ 0x641583fa2a40] Error muxing a packet
+[out#0/framecrc @ 0x641583fa2a40] Task finished with error code: -32 (Broken pipe)
+[out#0/framecrc @ 0x641583fa2a40] Terminating thread with return code -32 (Broken pipe)
+[out#0/framecrc @ 0x641583fa2a40] Error writing trailer: Broken pipe
+[out#0/framecrc @ 0x641583fa2a40] Error closing file: Broken pipe
+[out#0/framecrc @ 0x641583fa2a40] video:0KiB audio:800KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+size=       3KiB time=00:00:05.29 bitrate=   4.5kbits/s speed=5.49e+03x elapsed=0:00:00.00    
+Conversion failed!

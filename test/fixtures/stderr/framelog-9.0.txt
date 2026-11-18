@@ -1,0 +1,9 @@
+[aist#0:0/pcm_f32le @ 0x56866fd3c400] Guessed Channel Layout: stereo
+Input #0, f32le, from 'pipe:0':
+  Duration: N/A, bitrate: 3072 kb/s
+  Stream #0:0: Audio: pcm_f32le, 48000 Hz, stereo, flt, 3072 kb/s
+[Parsed_ebur128_0 @ 0x56866fd4f8c0] [Eval @ 0x7ffe40f7b2e0] Undefined constant or missing '(' in 'bogus'
+[Parsed_ebur128_0 @ 0x56866fd4f8c0] Unable to parse "framelog" option value "bogus"
+[fc#-1 @ 0x56866fd4f280] Error applying option 'framelog' to filter 'ebur128': Invalid argument
+Error opening output file -.
+Error opening output files: Invalid argument
