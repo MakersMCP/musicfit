@@ -789,7 +789,7 @@ test("a video with no sound of its own gets the music alone", () => {
   const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", film("mute"), "--out", out]);
   assert.equal(run.status, 0, run.stderr);
   assert.equal(cuesOf(out).video.sound, "none");
-  assert.match(run.stdout, /Video {3}video\.mp4 is mute\.mp4 with the music \(it had no sound of its own\)/);
+  assert.match(run.stdout, /Video {3}video\.mp4 is mute\.mp4 with the music \(ffmpeg reads no sound of its own in it\)/);
 });
 
 test("a video that cannot take the fit is refused before any work, and no folder is made", () => {
@@ -1675,10 +1675,10 @@ test("a video.mp4 that stopped short of the loudness asked for says so, in the s
   const out = at("short-fit");
   const run = spawnSync(process.execPath, [CLI, fixture("house").file, "--length", "12", "--hit", "8", "--video", film("mute"), "--out", out], { encoding: "utf8", env: { ...process.env, FFMPEG_PATH: path.join(__dirname, "fixtures", "erraticaac", "ffmpeg"), MUSICFIT_TEST_STATE: at(`short-${process.hrtime.bigint()}`), MUSICFIT_TEST_PEAKS: "-1.2", MUSICFIT_TEST_LOUDNESS: "-15.3" } });
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /\n {2}Video {3}video\.mp4 is mute\.mp4 with the music \(it had no sound of its own\); -15\.3 LUFS, true peak -1\.2 dBTP\n/);
+  assert.match(run.stdout, /\n {2}Video {3}video\.mp4 is mute\.mp4 with the music \(ffmpeg reads no sound of its own in it\); -15\.3 LUFS, true peak -1\.2 dBTP\n/);
   assert.match(run.stdout, /\n {2}Note {4}video\.mp4 is at -15\.3 LUFS after the AAC encoding, short of the -14 LUFS asked for: any louder and its true peaks would pass -1 dBTP\.\n/);
   const md = fs.readFileSync(path.join(out, "FIT.md"), "utf8");
-  assert.match(md, /into `video\.mp4`, with the music \(it had no sound of its own\), the whole raised toward -14 LUFS but stopped at -15\.3 LUFS, measured after the AAC encoding: any louder and its true peaks would pass -1 dBTP\./);
+  assert.match(md, /into `video\.mp4`, with the music \(ffmpeg reads no sound of its own in it\), the whole raised toward -14 LUFS but stopped at -15\.3 LUFS, measured after the AAC encoding: any louder and its true peaks would pass -1 dBTP\./);
   assert.doesNotMatch(md, /the whole set to -14 LUFS/);
   // Short of the target and over -1 dBTP: both said, and no peak given as
   // the reason it stopped.

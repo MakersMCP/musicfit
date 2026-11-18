@@ -675,6 +675,25 @@ test("a video with no sound says so", () => {
   assert.match(run.stderr, /silent-film\.mp4 has no audio stream/);
 });
 
+test("a track or a voice in which ffmpeg reads no sound is told only that, as one may have none and one damaged rather than cut short may read so on one version of ffmpeg and otherwise on another, as the README's Limits say: a WAV whose data holds no samples, on every ffmpeg", () => {
+  const limits = "A track, a voice or a video damaged rather than cut short, as by a bad disk or a transfer that changed some of its bytes, can read as a shorter one, as one with no sound, or not at all, and each version of ffmpeg reads such a file its own way.";
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes(limits));
+  const skill = fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "SKILL.md"), "utf8");
+  assert.ok(skill.includes("A file damaged rather than cut, as by a bad disk or a transfer that changed some of its bytes, can read as a shorter one, as one with no sound, or not at all"));
+  assert.ok(skill.includes('"ffmpeg reads no sound in <file>" means ffmpeg read no sound from that track or voice'));
+  const { writeWav } = require("./synth");
+  const empty = path.join(dir, "no samples.wav");
+  writeWav(empty, { rate: 48000, L: new Float32Array(0), R: new Float32Array(0) });
+  const { file } = fixture("house");
+  for (const [i, args] of [[empty, "--length", "10"], [file, "--length", "10", "--voice", empty]].entries()) {
+    const out = path.join(dir, `no-samples-${i}`);
+    const run = spawnSync(process.execPath, [CLI, ...args, "--out", out], { encoding: "utf8" });
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: ffmpeg reads no sound in ${empty}`, args.join(" "));
+    assert.ok(!fs.existsSync(out), args.join(" "));
+  }
+});
+
 test("a track, a voice or a video given as an address is refused before any work: musicfit reads files", () => {
   const { file } = fixture("house");
   const address = "http://127.0.0.1:9/track.wav";

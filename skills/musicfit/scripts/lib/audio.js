@@ -603,7 +603,10 @@ async function decode(file, { rate = RATE, channels = 2, from = null, most = Inf
   // to where its data stops or a Matroska file up to where it ends, says so
   // and ends well.
   if (damaged(ownLines(read.stderr, at))) throw new Error(`Cannot read ${file}: it is cut short or damaged (ffmpeg could read ${(samples.length / channels / rate).toFixed(2)} s of its sound)`);
-  if (!samples.length) throw noAudio(`${file} has no audio`);
+  // No sound read: a file with none, or one damaged so that ffmpeg reads
+  // none of it, and each version of ffmpeg reads such a file its own way, so
+  // the refusal says only what the run read.
+  if (!samples.length) throw noAudio(`ffmpeg reads no sound in ${file}`);
   return samples;
 }
 

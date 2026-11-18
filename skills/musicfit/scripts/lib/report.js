@@ -352,7 +352,7 @@ function underVideo(c) {
   if (v.sound === "voice" && !v.spans.length) return `${all}, which had no speech for the music to dip under`;
   if (v.sound === "voice") return `its own sound ${set}${voice}, the music dipping ${v.duck} dB under ${c.voice ? "both" : "it"}`;
   if (v.sound === "drop") return `the music${voice} in place of its own sound`;
-  return `the music${voice} (it had no sound of its own)`;
+  return `the music${voice} (ffmpeg reads no sound of its own in it)`;
 }
 
 // How far the music dips under the places of keep, said after them: "the
