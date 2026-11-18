@@ -644,6 +644,28 @@ test("a track or a voice cut short is said to be: an M4A cut before its index or
   assert.deepEqual(fs.readdirSync(folder).filter((name) => name.startsWith("out ") || name.startsWith("voice ")), []);
 });
 
+test("a track cut short in its sound, as an MP3, a WAV, a FLAC or an MPEG-TS file whose download stopped, reads as a shorter one, as the README's Limits say, also where ffmpeg's decoder says the data at its end is broken", () => {
+  const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+  const said = "A track or a voice cut short in its sound, as an MP3, a WAV, a FLAC or an MPEG-TS file whose download stopped, reads as a shorter one, also where ffmpeg's decoder says the data at its end is broken";
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes(said));
+  const folder = path.join(dir, "cut-sounds");
+  fs.mkdirSync(folder, { recursive: true });
+  const kinds = [["wav", []], ["flac", ["-c:a", "flac"]], ["ts", ["-c:a", "aac", "-b:a", "128k"]]];
+  if (/\blibmp3lame\b/.test(spawnSync(FFMPEG, ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout)) kinds.push(["mp3", ["-c:a", "libmp3lame"]]);
+  for (const [ext, codec] of kinds) {
+    const whole = path.join(folder, `song.${ext}`);
+    const made = spawnSync(FFMPEG, ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12", ...codec, whole], { encoding: "utf8" });
+    assert.equal(made.status, 0, made.stderr);
+    const bytes = fs.readFileSync(whole);
+    const cut = path.join(folder, `cut song.${ext}`);
+    fs.writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length / 2)));
+    const run = spawnSync(process.execPath, [CLI, cut, "--length", "4", "--out", path.join(folder, `out ${ext}`)], { encoding: "utf8" });
+    assert.equal(run.status, 0, `${ext}: ${run.stderr}`);
+    const seconds = Number((/Fitted .*? \((\d+\.\d+) s/.exec(run.stdout) || [])[1]);
+    assert.ok(seconds > 4 && seconds < 8, `${ext}: ${run.stdout}`);
+  }
+});
+
 test("a video with no sound says so", () => {
   const film = path.join(dir, "silent-film.mp4");
   const made = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=32x32:d=0.5", "-c:v", "mpeg4", film], { encoding: "utf8" });
