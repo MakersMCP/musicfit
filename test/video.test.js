@@ -1241,7 +1241,7 @@ test("a whole MP4 or M4A behind an ID3v2 tag is refused on every ffmpeg, as the 
   assert.equal(fit.status, 0, fit.stderr);
 });
 
-test("a video whose own sound is cut short is refused when that sound would be laid in, and goes with --video-sound drop", () => {
+test("a video whose own sound is cut short is refused when that sound would be laid in, also when its name holds the words for a sound that has none, and goes with --video-sound drop", () => {
   // Written in fragments, each with the picture's frames first, then the
   // sound's, here a tone that fills some kilobytes of each: cut a kilobyte
   // before the end of the last one, all of the picture is there, as the
@@ -1251,12 +1251,17 @@ test("a video whose own sound is cut short is refused when that sound would be l
   const data = topBoxes(bytes).filter((box) => box.kind === "mdat").pop();
   const cut = at("frag-tone cut.mp4");
   fs.writeFileSync(cut, bytes.subarray(0, data.at + data.size - 1000));
-  const keep = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", cut, "--video-sound", "keep", "--out", at("frag-cut-keep")]);
-  assert.equal(keep.status, 1, keep.stderr);
-  const last = keep.stderr.split("\n").filter(Boolean).pop();
-  assert.ok(last.startsWith(`musicfit: Cannot read ${cut}: `), keep.stderr);
-  assert.match(last.slice(`musicfit: Cannot read ${cut}: `.length), /^it is cut short or damaged \(ffmpeg could read \d+\.\d\d s of its sound\)$/);
-  assert.ok(!fs.existsSync(at("frag-cut-keep")));
+  // Its name holds the words of a sound that has none, which say nothing of it.
+  const named = at("frag-tone cut has no audio.mp4");
+  fs.copyFileSync(cut, named);
+  for (const video of [cut, named]) {
+    const keep = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--video-sound", "keep", "--out", at("frag-cut-keep")]);
+    assert.equal(keep.status, 1, keep.stderr);
+    const last = keep.stderr.split("\n").filter(Boolean).pop();
+    assert.ok(last.startsWith(`musicfit: Cannot read ${video}: `), keep.stderr);
+    assert.match(last.slice(`musicfit: Cannot read ${video}: `.length), /^it is cut short or damaged \(ffmpeg could read \d+\.\d\d s of its sound\)$/);
+    assert.ok(!fs.existsSync(at("frag-cut-keep")));
+  }
   const drop = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", cut, "--video-sound", "drop", "--out", at("frag-cut-drop")]);
   assert.equal(drop.status, 0, drop.stderr);
 });

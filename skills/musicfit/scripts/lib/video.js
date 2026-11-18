@@ -117,7 +117,8 @@ async function probe(file) {
     if (err.unstarted || err.stopped) throw err;
     const why = err.stderr || err.message;
     if (/No such file|does not exist/.test(why) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
-    throw unread(file, why, layout) || err;
+    // Else the line that says why, after the file's name.
+    throw unread(file, why, layout) || new Error(`Cannot read ${file}: ${err.message}`);
   }
 
   const input = inputSection(said);
@@ -294,7 +295,7 @@ async function ownSound(file, n, start, stream = 0) {
   try {
     x = await decode(file, { rate: RATE, channels: 2, from: start, stream });
   } catch (err) {
-    if (/has no audio/.test(err.message)) return null;
+    if (err.noAudio) return null;
     throw err;
   }
   const L = new Float32Array(n);

@@ -319,7 +319,7 @@ test("a call in a folder that is not there is not taken for an ffmpeg that canno
   });
 });
 
-test("a track or a video is said to be missing only when it is: a No such file or does not exist in what ffmpeg says, as in the name of the folder it is in, or of another file, is told in ffmpeg's words", posix, async () => {
+test("a track or a video is said to be missing only when it is: a No such file or does not exist in what ffmpeg says, as in the name of the folder it is in, or of another file, is told in ffmpeg's words after the name of the file it was reading", posix, async () => {
   const { decode } = require("../skills/musicfit/scripts/lib/audio");
   const { probe } = require("../skills/musicfit/scripts/lib/video");
   const gone = outDir("taken-away.wav");
@@ -348,8 +348,8 @@ test("a track or a video is said to be missing only when it is: a No such file o
     fs.chmodSync(standIn, 0o755);
     process.env.FFMPEG_PATH = standIn;
     try {
-      await assert.rejects(decode(file), { message });
-      await assert.rejects(probe(file), { message });
+      await assert.rejects(decode(file), { message: `Cannot read ${file}: ${message}` });
+      await assert.rejects(probe(file), { message: `Cannot read ${file}: ${message}` });
     } finally {
       if (was === undefined) delete process.env.FFMPEG_PATH;
       else process.env.FFMPEG_PATH = was;

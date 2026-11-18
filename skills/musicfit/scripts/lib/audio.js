@@ -587,18 +587,24 @@ async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0
   } catch (err) {
     if (err.unstarted || err.stopped) throw err;
     // ffmpeg says why early and sums up last, so all it said is searched.
+    // Else the line that says why, after the file's name, so a run with a
+    // track, a voice and a video says which of them ffmpeg could not read.
     const said = err.stderr || err.message;
     if (/No such file|does not exist/.test(said) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
-    throw unreadSound(file, said, layout) || err;
+    throw unreadSound(file, said, layout) || new Error(`Cannot read ${file}: ${err.message}`);
   }
   const samples = await floats(read.chunks);
   // ffmpeg reads what it can of a file cut short, the samples of an MP4 up
   // to where its data stops or a Matroska file up to where it ends, says so
   // and ends well.
   if (damaged(ownLines(read.stderr, at))) throw new Error(`Cannot read ${file}: it is cut short or damaged (ffmpeg could read ${(samples.length / channels / rate).toFixed(2)} s of its sound)`);
-  if (!samples.length) throw new Error(`${file} has no audio`);
+  if (!samples.length) throw noAudio(`${file} has no audio`);
   return samples;
 }
+
+// The refusal of a file with no sound to read, marked so: its message holds
+// the file's name, which may hold any words.
+const noAudio = (message) => Object.assign(new Error(message), { noAudio: true });
 
 // Why `file` cannot be read as a sound, from what ffmpeg printed when it
 // failed, `said`, and from the file's own boxes, `layout` (see boxes() in
@@ -611,7 +617,7 @@ function unreadSound(file, said, layout) {
   const at = where(file);
   const own = ownLines(said, at);
   const index = noIndex(own, layout);
-  if (index === "picture" || /matches no streams/.test(own)) return new Error(`${file} has no audio stream`);
+  if (index === "picture" || /matches no streams/.test(own)) return noAudio(`${file} has no audio stream`);
   if (index) return indexError(file);
   if (/Invalid data found/.test(own)) return unknown(file);
   // A file ffmpeg could not open, in ffmpeg's words for it.
