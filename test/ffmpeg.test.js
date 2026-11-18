@@ -581,8 +581,26 @@ test("an ffmpeg stopped by a signal while it reads a video or a sound leaves a s
   }
 });
 
-test("a file that is no video is not taken for an MP4 cut short when its name, the name of its folder or its tags hold ffmpeg's words for one", async () => {
+test("a file that is no video is not taken for an MP4 cut short, nor for one with no picture or no sound, nor for one ffmpeg finds no data in, when its name, the name of its folder or its tags hold ffmpeg's words for one", async () => {
   const { probe } = require("../skills/musicfit/scripts/lib/video");
+  const { decode } = require("../skills/musicfit/scripts/lib/audio");
+  // ffmpeg names the file in the lines it prints for it, and its words for
+  // a file with no stream of a kind, or with no data it reads, are read
+  // only where ffmpeg says them.
+  for (const folder of ["matches no streams", "Invalid data found"]) {
+    const notes = path.join(outDir(folder), "notes.aac");
+    fs.mkdirSync(path.dirname(notes), { recursive: true });
+    fs.writeFileSync(notes, "some notes\n");
+    await assert.rejects(decode(notes), (err) => {
+      assert.ok(err.message.startsWith(`Cannot read ${notes}: `), err.message);
+      assert.match(err.message.slice(`Cannot read ${notes}: `.length), /^ffmpeg: (?:Error opening input: )?End of file$/);
+      return true;
+    });
+  }
+  const text = path.join(outDir("matches no streams"), "notes.txt");
+  fs.writeFileSync(text, "some notes\n");
+  await assert.rejects(decode(text), { message: `Cannot read ${text}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` });
+  await assert.rejects(probe(text), { message: `Cannot read ${text}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` });
   const named = [path.join(outDir("moov atom not found"), "notes.txt"), path.join(outDir("error reading header"), "notes.txt")];
   // A name that holds a line of them, where the system takes one.
   if (process.platform !== "win32") named.push(path.join(outDir("index-named"), "odd\n[mov,mp4,m4a,3gp,3g2,mj2 @ 0x1] moov atom not found\n.txt"));
