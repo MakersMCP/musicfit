@@ -468,7 +468,7 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   // A picture ffmpeg 4.4 knows no size of, which it will not copy. The tags
   // it lists are not lines of its own, whatever words they hold.
   const sizeless = put("sizeless.mp4", ftyp, moov);
-  const size = `Cannot read ${sizeless}: it is cut short or damaged, so ffmpeg finds no size for its picture`;
+  const size = `Cannot read ${sizeless}: ffmpeg finds no size for its picture`;
   assert.equal(read("sizeless", "4.4", sizeless).video, size);
   const noted = (lines) => lines.replace(/^( +)handler_name +: VideoHandler$/m, "$&\n$1comment         : a note that ends in: corrupt input packet in stream 0");
   assert.match(noted(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8")), /^ +comment +: a note that ends in: corrupt input packet in stream 0$/m);

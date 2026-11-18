@@ -78,8 +78,11 @@ function sizeless(picture) {
   return /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(picture) && !/, \d+x\d+\b/.test(picture);
 }
 
-// The refusal of a video whose picture ffmpeg lists with no size.
-const noSize = (file) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no size for its picture`);
+// The refusal of a video whose picture ffmpeg lists with no size, as it
+// does where the file is cut short or damaged, and also where a whole file's
+// picture starts after what ffmpeg reads to learn its streams, so it says
+// no more than that.
+const noSize = (file) => new Error(`Cannot read ${file}: ffmpeg finds no size for its picture`);
 
 // The refusal of a video ffmpeg finds no frame of, which a file cut short
 // can list a picture with.
@@ -201,13 +204,15 @@ async function probe(file) {
     const whole = d ? Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]) : 0;
     throw new Error(`Cannot read ${file}: it is cut short or damaged (ffmpeg could read ${frames} ${frames === 1 ? "frame" : "frames"}, ${seconds.toFixed(2)} s${whole > seconds + 0.05 ? ` of the ${whole.toFixed(2)} s it says it holds` : ""})`);
   }
+  // A still picture has its one frame, or comes in a kind of file that holds
+  // pictures, whether or not ffmpeg finds its size, as ffmpeg 9 does not for
+  // a PNG behind an ID3v2 tag.
+  if (frames && (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step)) throw new Error(`${name} is a still picture, not a video`);
   // A picture of no size, which ffmpeg 4.4 fails on before this, and the
   // MP4 copy below would fail on.
   if (sizeless(pictureLine)) throw noSize(file);
-  // A still picture has its one frame; a file cut short can list a picture
-  // with no frame of it.
+  // A file cut short can list a picture with no frame of it.
   if (!frames) throw noFrames(file);
-  if (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step) throw new Error(`${name} is a still picture, not a video`);
   // The rate holds steady when every gap is a whole number of steps, give
   // or take a tick of the timebase or a millisecond (a 29.97 fps video in a
   // millisecond timebase steps 33 and 34, and keeps those steps when it is
