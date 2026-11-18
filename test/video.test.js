@@ -810,10 +810,10 @@ test("a video that cannot take the fit is refused before any work, and no folder
   const headFirst = cut(film("film12fast", { codec: ["-c:v", "mpeg4", "-q:v", "6", "-movflags", "+faststart"] }), "cut-fast.mp4");
   const headLast = cut(film("film12", {}), "cut-last.mp4");
   const cases = [
-    [fixture("house").file, /musicfit: house\.wav has no picture to lay the music under\n$/],
+    [fixture("house").file, /musicfit: ffmpeg finds no picture in house\.wav to lay the music under\n$/],
     [at("nothing.mp4"), /musicfit: Cannot read .*nothing\.mp4: no such file\n$/],
     [text, /musicfit: Cannot read .*notes\.txt: it is not a kind of file ffmpeg reads, or it is cut short or damaged\n$/],
-    [still, /musicfit: still\.png is a still picture, not a video\n$/],
+    [still, /musicfit: still\.png reads as a still picture, not a video\n$/],
     [prores, /musicfit: prores\.mov's picture is prores, which an MP4 cannot hold without encoding it again: give --video an H\.264 or HEVC copy of it\n$/],
     [film("film14", { seconds: 14 }), /musicfit: film14\.mp4 is 14\.00 s long \(350 frames at 25 fps\) and --length is 12\.00 s: give --length 14, or 350f\n$/],
     [film("film3602", { fps: 1, seconds: 3602 }), /musicfit: film3602\.mp4 is 3602\.00 s long \(3602 frames at 1 fps\), longer than the hour --length takes at most: give --video a cut of an hour or less\n$/],
@@ -1298,7 +1298,47 @@ test("a picture ffmpeg lists with no size is refused in words true of every vide
   fs.writeFileSync(tagged, Buffer.concat([id3(), fs.readFileSync(png)]));
   const still = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", tagged, "--out", at("refused-tagged-still")]);
   assert.equal(still.status, 1, still.stderr);
-  assert.equal(still.stderr, "musicfit: tagged-still.png is a still picture, not a video\n");
+  assert.equal(still.stderr, "musicfit: tagged-still.png reads as a still picture, not a video\n");
+});
+
+test("a Matroska film damaged where it lists its tracks, which ffmpeg then lists no stream of, is told only that ffmpeg finds no picture in it, as the video, or no sound stream, as the track and the voice, on every ffmpeg", () => {
+  const bytes = Buffer.from(fs.readFileSync(film("film12-sound-mkv", { sound: effects(), ext: "mkv" })));
+  // EBML numbers: an ID keeps the bit that gives its length, a size does not.
+  const number = (at, id) => {
+    let length = 1;
+    while (length < 8 && !(bytes[at] & (0x80 >> (length - 1)))) length++;
+    let value = id ? bytes[at] : bytes[at] & (0xff >> length);
+    for (let i = 1; i < length; i++) value = value * 256 + bytes[at + i];
+    return { length, value };
+  };
+  const element = (at) => {
+    const id = number(at, true);
+    const size = number(at + id.length, false);
+    return { id: id.value, body: at + id.length + size.length, size: size.value };
+  };
+  // The Tracks element among the segment's: its first 16 bytes made bytes
+  // no reader takes, as a bad disk or a transfer can leave them.
+  const head = element(0);
+  const segment = element(head.body + head.size);
+  let tracks = element(segment.body);
+  while (tracks.id !== 0x1654ae6b) tracks = element(tracks.body + tracks.size);
+  for (let i = 0; i < 16; i++) bytes[tracks.body + i] = (i * 2654435761) >>> 24;
+  const damaged = at("damaged tracks.mkv");
+  fs.writeFileSync(damaged, bytes);
+  assert.doesNotMatch(said(damaged), /Stream #0:/);
+  const { file } = fixture("house");
+  const runs = [
+    [[file, "--length", "12", "--hit", "8", "--video", damaged, "--video-sound", "keep"], "musicfit: ffmpeg finds no picture in damaged tracks.mkv to lay the music under"],
+    [[damaged, "--length", "10"], `musicfit: ffmpeg finds no sound stream in ${damaged}`],
+    [[file, "--length", "10", "--voice", damaged], `musicfit: ffmpeg finds no sound stream in ${damaged}`],
+  ];
+  for (const [i, [args, told]] of runs.entries()) {
+    const out = at(`damaged-tracks-${i}`);
+    const run = cli([...args, "--out", out]);
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), told, args.join(" "));
+    assert.ok(!fs.existsSync(out), args.join(" "));
+  }
 });
 
 test("a video ffmpeg cannot copy into an MP4 for another reason than its picture's size is named before ffmpeg's words for it, on every ffmpeg: a MOV whose picture's MPEG-4 headers, which give its size, are damaged, so ffmpeg lists the picture with its pixels and no size", () => {
@@ -1321,29 +1361,29 @@ test("a video ffmpeg cannot copy into an MP4 for another reason than its picture
   assert.ok(!fs.existsSync(out));
 });
 
-test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track it has no audio stream", () => {
+test("a HEIF picture, as an AVIF or a HEIC is, reads as a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track ffmpeg finds no sound stream in it", () => {
   const avif = at("still.avif");
   fs.copyFileSync(path.join(__dirname, "fixtures", "still.avif"), avif);
   const run = cli([fixture("house").file, "--length", "12", "--video", avif, "--out", at("refused-still-avif")]);
   assert.equal(run.status, 1, run.stderr);
-  assert.equal(run.stderr, "musicfit: still.avif is a still picture, not a video\n");
+  assert.equal(run.stderr, "musicfit: still.avif reads as a still picture, not a video\n");
   const track = cli([avif, "--length", "12", "--out", at("still-avif-track")]);
   assert.equal(track.status, 1, track.stderr);
-  assert.equal(track.stderr.split("\n").filter(Boolean).pop(), `musicfit: ${avif} has no audio stream`);
+  assert.equal(track.stderr.split("\n").filter(Boolean).pop(), `musicfit: ffmpeg finds no sound stream in ${avif}`);
 });
 
-test("a JPEG XL picture in its box is never taken for an MP4 cut short: where ffmpeg reads JPEG XL it is a still picture with no audio stream, and where it does not, as ffmpeg 4.4 takes it for an MP4 with no moov, it is a file ffmpeg does not read, as the video, the track and the voice", () => {
+test("a JPEG XL picture in its box is never taken for an MP4 cut short: where ffmpeg reads JPEG XL it reads as a still picture with no sound stream, and where it does not, as ffmpeg 4.4 takes it for an MP4 with no moov, it is a file ffmpeg does not read, as the video, the track and the voice", () => {
   const jxl = at("still.jxl");
   fs.copyFileSync(path.join(__dirname, "fixtures", "still.jxl"), jxl);
   const reads = /^\s*D\S*\s+jpegxl_pipe\b/m.test(spawnSync(FFMPEG, ["-hide_banner", "-demuxers"], { encoding: "utf8" }).stdout);
   const unknown = `musicfit: Cannot read ${jxl}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`;
   const video = cli([fixture("house").file, "--length", "12", "--video", jxl, "--out", at("refused-still-jxl")]);
   assert.equal(video.status, 1, video.stderr);
-  assert.equal(video.stderr, `${reads ? "musicfit: still.jxl is a still picture, not a video" : unknown}\n`);
+  assert.equal(video.stderr, `${reads ? "musicfit: still.jxl reads as a still picture, not a video" : unknown}\n`);
   for (const [i, args] of [[jxl, "--length", "12"], [fixture("house").file, "--length", "12", "--voice", jxl]].entries()) {
     const run = cli([...args, "--out", at(`still-jxl-${i}`)]);
     assert.equal(run.status, 1, run.stderr);
-    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), reads ? `musicfit: ${jxl} has no audio stream` : unknown, args.join(" "));
+    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), reads ? `musicfit: ffmpeg finds no sound stream in ${jxl}` : unknown, args.join(" "));
   }
 });
 
@@ -1413,7 +1453,7 @@ test("a WAV or a Matroska file behind an ID3v2 tag is read whole where ffmpeg re
       assert.ok(!fs.existsSync(out), args.join(" "));
     } else if (args.includes("--video") && path.extname(file) === ".wav") {
       assert.equal(run.status, 1, run.stderr);
-      assert.equal(run.stderr, "musicfit: tagged song.wav has no picture to lay the music under\n");
+      assert.equal(run.stderr, "musicfit: ffmpeg finds no picture in tagged song.wav to lay the music under\n");
     } else {
       assert.equal(run.status, 0, `${args.join(" ")}: ${run.stderr}`);
     }

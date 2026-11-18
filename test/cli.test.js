@@ -703,15 +703,16 @@ test("a video with no sound says so", () => {
   assert.equal(made.status, 0, made.stderr);
   const run = spawnSync(process.execPath, [CLI, film, "--length", "5", "--out", path.join(dir, "silent-film")], { encoding: "utf8" });
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /silent-film\.mp4 has no audio stream/);
+  assert.ok(run.stderr.endsWith(`musicfit: ffmpeg finds no sound stream in ${film}\n`), run.stderr);
 });
 
 test("a track or a voice in which ffmpeg reads no sound is told only that, as one may have none and one damaged rather than cut short may read so on one version of ffmpeg and otherwise on another, as the README's Limits say: a WAV whose data holds no samples, on every ffmpeg", () => {
-  const limits = "A track, a voice or a video damaged rather than cut short, as by a bad disk or a transfer that changed some of its bytes, can read as a shorter one, as one with no sound, or not at all, and each version of ffmpeg reads such a file its own way.";
+  const limits = "A track, a voice or a video damaged rather than cut short, as by a bad disk or a transfer that changed some of its bytes, can read as another file than it is: a shorter or a longer one, one with no sound or no picture, or only a still one, or not at all, and each version of ffmpeg reads such a file its own way.";
   assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes(limits));
   const skill = fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "SKILL.md"), "utf8");
-  assert.ok(skill.includes("A file damaged rather than cut, as by a bad disk or a transfer that changed some of its bytes, can read as a shorter one, as one with no sound, or not at all"));
-  assert.ok(skill.includes('"ffmpeg reads no sound in <file>" means ffmpeg read no sound from that track or voice'));
+  assert.ok(skill.includes("A file damaged rather than cut, as by a bad disk or a transfer that changed some of its bytes, can read as another file than it is: a shorter or a longer one, one with no sound or no picture, or only a still one, or not at all"));
+  assert.ok(skill.includes('"ffmpeg reads no sound in <file>" and "ffmpeg finds no sound stream in <file>" mean ffmpeg read no sound from that track or voice'));
+  assert.ok(skill.includes('"ffmpeg finds no picture in <name> to lay the music under" means ffmpeg found no picture in the file given as `--video`'));
   const { writeWav } = require("./synth");
   const empty = path.join(dir, "no samples.wav");
   writeWav(empty, { rate: 48000, L: new Float32Array(0), R: new Float32Array(0) });

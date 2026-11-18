@@ -625,7 +625,9 @@ function unreadSound(file, said, layout) {
   const at = where(file);
   const own = ownLines(said, at);
   const index = noIndex(own, layout);
-  if (index === "picture" || /matches no streams/.test(own)) return noAudio(`${file} has no audio stream`);
+  // No sound stream listed: a picture, or a file damaged so that ffmpeg
+  // lists none of its streams, so the words say only what ffmpeg found.
+  if (index === "picture" || /matches no streams/.test(own)) return noAudio(`ffmpeg finds no sound stream in ${file}`);
   if (index) return indexError(file);
   if (/Invalid data found/.test(own)) return noData(file, layout);
   // A file ffmpeg could not open, in ffmpeg's words for it.

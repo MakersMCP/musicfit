@@ -440,7 +440,7 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   // is one whose index is gone.
   const meta = box("meta", Buffer.alloc(4), box("hdlr", Buffer.alloc(8), brands("pict"), Buffer.alloc(13)));
   const still = put("still.avif", box("ftyp", brands("avif", "\0\0\0\0", "avif", "mif1", "miaf")), meta, box("mdat", Buffer.alloc(32)));
-  assert.deepEqual(read("heif", "4.4", still), { video: "still.avif is a still picture, not a video", sound: `${still} has no audio stream` });
+  assert.deepEqual(read("heif", "4.4", still), { video: "still.avif reads as a still picture, not a video", sound: `ffmpeg finds no sound stream in ${still}` });
   const notStill = put("meta.mp4", ftyp, meta, box("mdat", Buffer.alloc(32)));
   assert.deepEqual(read("heif", "4.4", notStill), index(notStill));
   // ffmpeg 4.4 reads no JPEG XL picture, and takes one in its box for an
@@ -663,5 +663,5 @@ test("a file that is no video is not taken for an MP4 cut short, nor for one wit
   const tagged = outDir("tagged-sound.m4a");
   const made = spawnSync(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "aac", "-metadata", "comment=moov atom not found", "-metadata", "title=[mov,mp4,m4a,3gp,3g2,mj2 @ 0x1] error reading header", tagged], { encoding: "utf8" });
   assert.equal(made.status, 0, made.stderr);
-  await assert.rejects(probe(tagged), { message: "tagged-sound.m4a has no picture to lay the music under" });
+  await assert.rejects(probe(tagged), { message: "ffmpeg finds no picture in tagged-sound.m4a to lay the music under" });
 });

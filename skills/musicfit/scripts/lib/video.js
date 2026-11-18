@@ -118,9 +118,11 @@ function unread(file, said, layout) {
   const at = where(file);
   const own = ownLines(said, at);
   const index = noIndex(own, layout);
-  if (index === "picture") return new Error(`${name} is a still picture, not a video`);
+  if (index === "picture") return new Error(`${name} reads as a still picture, not a video`);
   if (index) return indexError(file);
-  if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
+  // No picture listed: a file of sound alone, or one damaged so that ffmpeg
+  // lists none of its streams, so the words say only what ffmpeg found.
+  if (/matches no streams/.test(own)) return new Error(`ffmpeg finds no picture in ${name} to lay the music under`);
   if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
   if (/Invalid data found/.test(own)) return noData(file, layout);
   if (sizeless(pictureOf(inputSection(said)))) return noSize(file);
@@ -223,8 +225,9 @@ async function probe(file) {
   }
   // A still picture has its one frame, or comes in a kind of file that holds
   // pictures, whether or not ffmpeg finds its size, as ffmpeg 9 does not for
-  // a PNG behind an ID3v2 tag.
-  if (frames && (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step)) throw new Error(`${name} is a still picture, not a video`);
+  // a PNG behind an ID3v2 tag. A video damaged rather than cut can read as
+  // one too, so the words say only how it reads.
+  if (frames && (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step)) throw new Error(`${name} reads as a still picture, not a video`);
   // A file cut short can list a picture with no frame of it, and with no
   // size, which ffmpeg 4.4 fails on before this.
   if (!frames) throw sizeless(pictureLine) ? noSize(file) : noFrames(file);
