@@ -142,7 +142,7 @@ async function probe(file) {
     // which may hold a line of such words.
     const own = why.split(where(file)).join("");
     if (!/detected only with low score/.test(own) && (NO_MOOV.test(own) || (NO_HEADER.test(own) && mp4Like(file)))) throw cutShort("index");
-    if (/Invalid data found/.test(why) || NO_MOOV.test(own)) throw new Error(`Cannot read ${file}: ffmpeg does not know this format`);
+    if (/Invalid data found/.test(why) || NO_MOOV.test(own)) throw new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
     if (/matches no streams/.test(why)) throw noStreams(why) ? cutShort("streams") : new Error(`${name} has no picture to lay the music under`);
     // A picture ffmpeg 4.4 will not even start to copy, as nothing is known
     // of it yet where the index stops; ffmpeg 8 copies none of its frames.

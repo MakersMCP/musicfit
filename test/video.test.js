@@ -812,7 +812,7 @@ test("a video that cannot take the fit is refused before any work, and no folder
   const cases = [
     [fixture("house").file, /musicfit: house\.wav has no picture to lay the music under\n$/],
     [at("nothing.mp4"), /musicfit: Cannot read .*nothing\.mp4: no such file\n$/],
-    [text, /musicfit: Cannot read .*notes\.txt: ffmpeg does not know this format\n$/],
+    [text, /musicfit: Cannot read .*notes\.txt: it is not a kind of file ffmpeg reads, or it is cut short or damaged\n$/],
     [still, /musicfit: still\.png is a still picture, not a video\n$/],
     [prores, /musicfit: prores\.mov's picture is prores, which an MP4 cannot hold without encoding it again: give --video an H\.264 or HEVC copy of it\n$/],
     [film("film14", { seconds: 14 }), /musicfit: film14\.mp4 is 14\.00 s long \(350 frames at 25 fps\) and --length is 12\.00 s: give --length 14, or 350f\n$/],

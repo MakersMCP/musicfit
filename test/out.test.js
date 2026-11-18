@@ -1264,10 +1264,10 @@ test("a track or a voice named like the words for a full disk is not taken for o
   const run = (args) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8" });
   const track = run(["No space left on device.wav", "--length", "12"]);
   assert.equal(track.status, 1);
-  assert.equal(track.stderr.split("\n").filter(Boolean).pop(), "musicfit: Cannot read No space left on device.wav: ffmpeg does not know this format");
+  assert.equal(track.stderr.split("\n").filter(Boolean).pop(), "musicfit: Cannot read No space left on device.wav: it is not a kind of file ffmpeg reads, or it is cut short or damaged");
   const voice = run(["Disk quota exceeded.wav", "--length", "12", "--voice", "No space left on device.wav"]);
   assert.equal(voice.status, 1);
-  assert.equal(voice.stderr.split("\n").filter(Boolean).pop(), "musicfit: Cannot read No space left on device.wav: ffmpeg does not know this format");
+  assert.equal(voice.stderr.split("\n").filter(Boolean).pop(), "musicfit: Cannot read No space left on device.wav: it is not a kind of file ffmpeg reads, or it is cut short or damaged");
   assert.deepEqual(fs.readdirSync(cwd).sort(), ["Disk quota exceeded.wav", "No space left on device.wav"]);
 });
 

@@ -405,7 +405,7 @@ test("on PATH a run uses the ffmpeg the system starts, past a folder, a file it 
   const { FFMPEG_PATH, ...rest } = process.env;
   const run = spawnSync(process.execPath, [CLI, __filename, "--length", "10", "--out", at("out")], { encoding: "utf8", env: { ...rest, PATH } });
   assert.equal(run.status, 1, run.stderr);
-  assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: ffmpeg does not know this format`);
+  assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
 });
 
 test("with no PATH at all a run uses the ffmpeg the system starts then, from its own folders", { skip: process.platform === "win32" ? "Windows has no such folders" : false }, () => {
@@ -424,7 +424,7 @@ test("with no PATH at all a run uses the ffmpeg the system starts then, from its
   const answers = first && /^ffmpeg version/m.test(spawnSync(first, ["-version"], { encoding: "utf8" }).stdout || "");
   const run = spawnSync(process.execPath, [CLI, __filename, "--length", "10", "--out", path.join(dir, "no-path")], { encoding: "utf8", env: rest });
   assert.equal(run.status, 1, run.stderr);
-  if (answers) assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: ffmpeg does not know this format`);
+  if (answers) assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
   else assert.match(run.stderr, /^musicfit: musicfit needs ffmpeg/);
 });
 
@@ -525,7 +525,7 @@ test("a script in ffmpeg's place that answers as ffmpeg goes ahead, and a track 
     const env = { ...process.env, FFMPEG_PATH: wrapper };
     const notAudio = spawnSync(process.execPath, [CLI, __filename, "--length", "10", "--out", path.join(root, "not-audio")], { encoding: "utf8", env });
     assert.equal(notAudio.status, 1, notAudio.stderr);
-    assert.equal(notAudio.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: ffmpeg does not know this format`, wrapper);
+    assert.equal(notAudio.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${__filename}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`, wrapper);
     const cutShort = spawnSync(process.execPath, [CLI, fixture("house").file, "--length", "50f", "--video", cut, "--out", path.join(root, "cut-short")], { encoding: "utf8", env });
     assert.equal(cutShort.status, 1, cutShort.stderr);
     assert.equal(cutShort.stderr, `musicfit: Cannot read ${cut}: it is cut short or damaged, so ffmpeg finds no index in it\n`, wrapper);

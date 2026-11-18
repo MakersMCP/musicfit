@@ -583,7 +583,7 @@ async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0
     const said = err.stderr || err.message;
     if (/matches no streams/.test(said)) throw new Error(`${file} has no audio stream`);
     if (/No such file|does not exist/.test(said) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
-    if (/Invalid data found/.test(said)) throw new Error(`Cannot read ${file}: ffmpeg does not know this format`);
+    if (/Invalid data found/.test(said)) throw new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
     throw err;
   }
 }

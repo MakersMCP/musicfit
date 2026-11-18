@@ -330,8 +330,8 @@ test("a track or a video is said to be missing only when it is: a No such file o
     const notes = path.join(outDir(folder), "notes.txt");
     fs.mkdirSync(path.dirname(notes), { recursive: true });
     fs.writeFileSync(notes, "some notes\n");
-    await assert.rejects(decode(notes), { message: `Cannot read ${notes}: ffmpeg does not know this format` });
-    await assert.rejects(probe(notes), { message: `Cannot read ${notes}: ffmpeg does not know this format` });
+    await assert.rejects(decode(notes), { message: `Cannot read ${notes}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` });
+    await assert.rejects(probe(notes), { message: `Cannot read ${notes}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` });
   }
   // An ffmpeg that fails on a part of the input that is not there, in the
   // words ffmpeg 4.4 and 8 use.
@@ -389,11 +389,11 @@ test("what ffmpeg 4.4, 8 and 9 print for an MP4 cut short inside its index or be
       }
       // "error reading header", which other demuxers may say too.
       lines("cut-index");
-      for (const file of others) await assert.rejects(probe(file), { message: `Cannot read ${file}: ffmpeg does not know this format` }, `cut-index-${version}: ${file}`);
+      for (const file of others) await assert.rejects(probe(file), { message: `Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` }, `cut-index-${version}: ${file}`);
       lines("cut-index-eof");
       for (const file of others) await assert.rejects(probe(file), { message: version === "4.4" ? "ffmpeg: error reading header" : "ffmpeg: Error opening input: End of file" }, `cut-index-eof-${version}: ${file}`);
       lines("low-score");
-      await assert.rejects(probe(guessed), { message: `Cannot read ${guessed}: ffmpeg does not know this format` }, `low-score-${version}`);
+      await assert.rejects(probe(guessed), { message: `Cannot read ${guessed}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` }, `low-score-${version}`);
     }
   } finally {
     for (const [key, value] of Object.entries(was)) {
@@ -411,7 +411,7 @@ test("a file that is no video is not taken for an MP4 cut short when its name, t
   for (const notes of named) {
     fs.mkdirSync(path.dirname(notes), { recursive: true });
     fs.writeFileSync(notes, "some notes\n");
-    await assert.rejects(probe(notes), { message: `Cannot read ${notes}: ffmpeg does not know this format` });
+    await assert.rejects(probe(notes), { message: `Cannot read ${notes}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` });
   }
   // A sound with no picture, which ffmpeg lists with its tags before it
   // says so.
