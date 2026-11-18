@@ -73,7 +73,11 @@ function pictureOf(input) {
 // kind, if known, comes before the first comma, then "none" where its
 // pixels are named, and no size such as ", 160x96" after. A stream's number
 // in the file, as in [0x100], is no size. Another stream of no size, a
-// second picture or a cover, goes into no MP4 and refuses nothing.
+// second picture or a cover, goes into no MP4 and refuses nothing. It
+// only words a refusal where ffmpeg has failed on the picture, and
+// refuses no video ffmpeg copies: ffmpeg prints a file's name and its
+// tags' keys as they are, so one that holds a line break and then a
+// stream's words makes a line that reads as a stream's.
 function sizeless(picture) {
   return /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(picture) && !/, \d+x\d+\b/.test(picture);
 }
@@ -208,11 +212,9 @@ async function probe(file) {
   // pictures, whether or not ffmpeg finds its size, as ffmpeg 9 does not for
   // a PNG behind an ID3v2 tag.
   if (frames && (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step)) throw new Error(`${name} is a still picture, not a video`);
-  // A picture of no size, which ffmpeg 4.4 fails on before this, and the
-  // MP4 copy below would fail on.
-  if (sizeless(pictureLine)) throw noSize(file);
-  // A file cut short can list a picture with no frame of it.
-  if (!frames) throw noFrames(file);
+  // A file cut short can list a picture with no frame of it, and with no
+  // size, which ffmpeg 4.4 fails on before this.
+  if (!frames) throw sizeless(pictureLine) ? noSize(file) : noFrames(file);
   // The rate holds steady when every gap is a whole number of steps, give
   // or take a tick of the timebase or a millisecond (a 29.97 fps video in a
   // millisecond timebase steps 33 and 34, and keeps those steps when it is
@@ -231,8 +233,12 @@ async function probe(file) {
   try {
     await run(["-v", "error", "-i", where(file), "-map", "0:V:0", "-c", "copy", "-frames:v", "1", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+delay_moov", "pipe:1"]);
   } catch (err) {
+    if (err.stopped || err.unstarted) throw err;
     const tag = /Could not find tag for codec (\w+)/.exec(err.stderr || err.message);
     if (tag) throw new Error(`${name}'s picture is ${tag[1]}, which an MP4 cannot hold without encoding it again: give --video an H.264 or HEVC copy of it`);
+    // A picture of no size, which no MP4 takes: ffmpeg 8 and 9 read its
+    // packets above, and fail here.
+    if (sizeless(pictureLine)) throw noSize(file);
     throw err;
   }
 

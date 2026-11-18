@@ -2071,6 +2071,29 @@ test("a whole video whose name or tags hold the words ffmpeg prints for a damage
   assert.equal(run.status, 0, run.stderr);
 });
 
+test("a whole video whose name or a tag's key holds a line like ffmpeg's for a picture of no size fits on every ffmpeg: such a line words a refusal only where ffmpeg fails on the picture", () => {
+  const whole = film("film12", {});
+  // ffmpeg prints a tag's key as it is, so a key that holds a line break
+  // makes a line of its own, here before the picture's own.
+  const line = "    Stream #0:0: Video: h264, none";
+  const keyed = at("keyed.mp4");
+  ffmpeg(["-i", whole, "-c", "copy", "-movflags", "use_metadata_tags", "-metadata", `note\n${line}=x`, keyed]);
+  assert.ok(said(keyed).includes(`\n${line}: x\n`), said(keyed));
+  const videos = [keyed];
+  // A name that holds such a line, where the system takes one.
+  if (process.platform !== "win32") {
+    const named = at(`odd\n${line}.mp4`);
+    fs.copyFileSync(whole, named);
+    videos.push(named);
+  }
+  for (const [i, video] of videos.entries()) {
+    const out = at(`keyed-fit-${i}`);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--out", out]);
+    assert.equal(run.status, 0, `${video}: ${run.stderr}`);
+    assert.deepEqual(packets(path.join(out, "video.mp4")), packets(video), video);
+  }
+});
+
 test("a picture that starts after the top of its file, as in a fragmented MP4 with B-frames, is measured from its first frame, and in video.mp4 it starts with the sound", async () => {
   const { probe } = require("../skills/musicfit/scripts/lib/video");
   // mpeg4 with B-frames, written in fragments with no edit list: the
