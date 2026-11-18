@@ -1285,13 +1285,16 @@ test("a whole video is read by the picture musicfit lays the music under, the on
   assert.equal(run.stderr, `musicfit: Cannot read ${none}: ffmpeg finds no size for its picture\n`);
 });
 
-test("a picture ffmpeg lists with no size is refused in words true of every video it lists one for, a whole MPEG-TS whose only picture starts 8 s after its sound, past what ffmpeg reads to learn the streams, among them, and a still picture is told so whether or not ffmpeg finds its size, as a PNG behind an ID3v2 tag, which ffmpeg 9 finds none for, on every ffmpeg", () => {
+test("a picture ffmpeg lists with no size is refused in words true of every video it lists one for, a whole MPEG-TS whose only picture starts 8 s after its sound, past what ffmpeg reads to learn the streams, among them, as the README's Limits say, and a still picture is told so whether or not ffmpeg finds its size, as a PNG behind an ID3v2 tag, which ffmpeg 9 finds none for, on every ffmpeg", () => {
   const late = at("late-picture.ts");
   ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=20", "-itsoffset", "8", "-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-map", "1:v", "-map", "0:a", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-b:a", "128k", late]);
   assert.match(said(late), /^\s*Stream #0:0\[0x100\]: Video: [^,\n]+, none\b(?!.*\d+x\d+)/m);
   const refused = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", late, "--out", at("refused-late-picture")]);
   assert.equal(refused.status, 1, refused.stderr);
   assert.equal(refused.stderr, `musicfit: Cannot read ${late}: ffmpeg finds no size for its picture\n`);
+  // The README's Limits say so of a whole video, and SKILL.md what to ask for.
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("- A whole video whose picture starts some seconds after its sound, as an MPEG-TS can, past what ffmpeg reads to learn its streams, is refused as one ffmpeg finds no size for its picture: give an MP4 copy of it.\n"));
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "SKILL.md"), "utf8").includes('"ffmpeg finds no size for its picture" means ffmpeg cannot tell how large the video\'s picture is, as when the video is cut short or damaged, or its picture starts some seconds into the file: ask for a whole copy, or an MP4 copy of it.'));
   const png = at("still-picture.png");
   ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:d=1", "-frames:v", "1", png]);
   const tagged = at("tagged-still.png");
