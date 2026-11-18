@@ -46,15 +46,36 @@ function inputSection(said) {
   return to < 0 ? rest : rest.slice(0, to);
 }
 
-// Whether ffmpeg lists a picture it knows nothing of the size of, as where
-// a file stops before it says, or where what says it is damaged: ffmpeg 4.4
-// will not even start to copy such a picture, and an MP4 cannot take it, so
-// ffmpeg 8 and 9, which copy what packets it has, fail to start the MP4 the
-// picture goes into. Its kind, if known, comes before the first comma, then
-// "none" where its pixels are named, and no size such as ", 160x96" after.
-// A stream's number in the file, as in [0x100], is no size.
-function sizeless(input) {
-  return input.split("\n").some((line) => /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(line) && !/, \d+x\d+\b/.test(line));
+// The line of ffmpeg's lines of the input, `input` (see inputSection()),
+// that lists the picture musicfit reads: the one -map 0:V:0 takes, the
+// video stream of the lowest number that is not a cover, "(attached pic)".
+// ffmpeg lists the streams of an MPEG-TS program by program, and the first
+// one listed can be another, of a program that comes first in the file's
+// list of them. "" when there is none.
+function pictureOf(input) {
+  let picture = "";
+  let least = Infinity;
+  for (const line of input.split("\n")) {
+    const stream = /^\s*Stream #0:(\d+)\b.*: Video: /.exec(line);
+    if (stream && !/\(attached pic\)/.test(line) && Number(stream[1]) < least) {
+      least = Number(stream[1]);
+      picture = line;
+    }
+  }
+  return picture;
+}
+
+// Whether ffmpeg lists the picture musicfit reads, on the line `picture`
+// (see pictureOf()), with no size, as where a file stops before it says,
+// or where what says it is damaged: ffmpeg 4.4 will not even start to copy
+// such a picture, and an MP4 cannot take it, so ffmpeg 8 and 9, which copy
+// what packets it has, fail to start the MP4 the picture goes into. Its
+// kind, if known, comes before the first comma, then "none" where its
+// pixels are named, and no size such as ", 160x96" after. A stream's number
+// in the file, as in [0x100], is no size. Another stream of no size, a
+// second picture or a cover, goes into no MP4 and refuses nothing.
+function sizeless(picture) {
+  return /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(picture) && !/, \d+x\d+\b/.test(picture);
 }
 
 // The refusal of a video whose picture ffmpeg lists with no size.
@@ -81,7 +102,7 @@ function unread(file, said, layout) {
   if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
   if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
   if (/Invalid data found/.test(own)) return unknown(file);
-  if (sizeless(inputSection(said))) return noSize(file);
+  if (sizeless(pictureOf(inputSection(said)))) return noSize(file);
   // A file ffmpeg could not open, in ffmpeg's words for it.
   if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);
   return null;
@@ -123,7 +144,7 @@ async function probe(file) {
 
   const input = inputSection(said);
   const lines = input.split("\n");
-  const pictureLine = lines.find((l) => /^\s*Stream #0:\d+.*: Video: /.test(l) && !/\(attached pic\)/.test(l)) || "";
+  const pictureLine = pictureOf(input);
   const soundLines = lines.filter((l) => /^\s*Stream #0:\d+.*: Audio: /.test(l));
   const subtitleLines = lines.filter((l) => /^\s*Stream #0:\d+.*: Subtitle: /.test(l));
   const format = (/Input #0, ([^,\s]+)/.exec(input) || [])[1] || "";
@@ -182,7 +203,7 @@ async function probe(file) {
   }
   // A picture of no size, which ffmpeg 4.4 fails on before this, and the
   // MP4 copy below would fail on.
-  if (sizeless(input)) throw noSize(file);
+  if (sizeless(pictureLine)) throw noSize(file);
   // A still picture has its one frame; a file cut short can list a picture
   // with no frame of it.
   if (!frames) throw noFrames(file);

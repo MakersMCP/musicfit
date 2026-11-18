@@ -1181,6 +1181,75 @@ test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpe
   }
 });
 
+// An MPEG-TS with the packets of the PIDs `drop` left out, and of the PID
+// `first` its first `some` packets only, from `from` into `to`.
+function withoutPackets(from, to, drop, { first = null, some = 0 } = {}) {
+  const bytes = fs.readFileSync(from);
+  const kept = [];
+  let left = some;
+  for (let at = 0; at + 188 <= bytes.length; at += 188) {
+    const pid = ((bytes[at + 1] & 0x1f) << 8) | bytes[at + 2];
+    if (drop.includes(pid)) continue;
+    if (pid === first && left > 0) {
+      left--;
+      continue;
+    }
+    kept.push(bytes.subarray(at, at + 188));
+  }
+  fs.writeFileSync(to, Buffer.concat(kept));
+  return to;
+}
+
+test("a whole video is read by the picture musicfit lays the music under, the one -map 0:V:0 copies, whatever ffmpeg lists of its other streams: an MPEG-TS whose PMT lists a second picture with no packets, one whose second picture starts after ffmpeg's probe, one whose programs list that empty picture first, and a Matroska file with a cover ffmpeg cannot read fit on every ffmpeg, and the same TS with no packets of its first picture is refused", () => {
+  const fit = (video, args = []) => {
+    const out = at(`fits-${path.basename(video)}`);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, ...args, "--out", out]);
+    assert.equal(run.status, 0, `${video}: ${run.stderr}`);
+    assert.deepEqual(packets(path.join(out, "video.mp4")), packets(video), video);
+  };
+  // A second picture of another size, and the film's sound, on PIDs 0x100
+  // (the first picture), 0x101 (the sound) and 0x102 (the second picture),
+  // as a recording of a broadcast whose PMT lists a service that sent
+  // nothing has no packets of it.
+  const two = at("two-pictures.ts");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-f", "lavfi", "-i", "testsrc=s=128x72:r=25:d=12", "-i", effects(), "-map", "0:v:0", "-map", "2:a:0", "-map", "1:v:0", "-t", "12", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-b:a", "128k", "-mpegts_start_pid", "0x100", two]);
+  const empty = withoutPackets(two, at("empty-second-picture.ts"), [0x102]);
+  assert.match(said(empty), /^\s*Stream #0:2\[0x102\]: Video: [^,\n]+, none\b(?!.*\d+x\d+)/m);
+  fit(empty, ["--video-sound", "keep"]);
+  // A second picture that starts 8 s in, past what ffmpeg reads to learn
+  // the streams, so it lists that one with no size.
+  const later = at("later-picture.ts");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-itsoffset", "8", "-f", "lavfi", "-i", "testsrc=s=160x96:r=25:d=4", "-map", "0:v", "-map", "1:v", "-c:v", "mpeg4", "-q:v", "6", later]);
+  assert.match(said(later), /^\s*Stream #0:1\[0x101\]: Video: [^,\n]+, none\b(?!.*\d+x\d+)/m);
+  fit(later);
+  // Two programs, the second picture's listed first: with the first copies
+  // of its PMT left out, ffmpeg meets the other program's first and numbers
+  // its picture 0, which -map 0:V:0 copies, but lists the programs in the
+  // order the file names them.
+  const programs = at("two-programs.ts");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-f", "lavfi", "-i", "testsrc=s=128x72:r=25:d=12", "-map", "0:v", "-map", "1:v", "-c:v", "mpeg4", "-q:v", "6", "-mpegts_start_pid", "0x100", "-mpegts_pmt_start_pid", "0x1000", "-program", "program_num=1:st=1", "-program", "program_num=2:st=0", programs]);
+  const listed = withoutPackets(programs, at("empty-program-first.ts"), [0x101], { first: 0x1000, some: 3 });
+  const streams = said(listed).split("\n").filter((line) => /^\s*Stream #0:/.test(line));
+  assert.match(streams[0], /^\s*Stream #0:1\[0x101\]: Video: [^,\n]+, none\b(?!.*\d+x\d+)/, streams.join("\n"));
+  assert.match(streams[1], /^\s*Stream #0:0\[0x100\]: Video: .*, 160x96\b/, streams.join("\n"));
+  fit(listed);
+  // A cover whose bytes are no picture: ffmpeg lists it, an attached pic,
+  // with no size, and -map 0:V:0 leaves it out.
+  const cover = at("no-picture.jpg");
+  let seed = 11;
+  fs.writeFileSync(cover, Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(Array.from({ length: 3000 }, () => (seed = (seed * 1103515245 + 12345) % 2147483648) >>> 23))]));
+  const covered = at("covered.mkv");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-c:v", "mpeg4", "-q:v", "6", "-attach", cover, "-metadata:s:t", "mimetype=image/jpeg", covered]);
+  assert.match(said(covered), /^\s*Stream #0:1: Video: [^,\n]+, none\b(?!.*\d+x\d+).*\(attached pic\)/m);
+  fit(covered);
+  // The picture -map 0:V:0 copies, with no packets: ffmpeg lists it with
+  // no size, and an MP4 cannot take it.
+  const none = withoutPackets(two, at("empty-first-picture.ts"), [0x100]);
+  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", none, "--video-sound", "keep", "--out", at("refused-empty-first-picture")]);
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(run.stderr, `musicfit: Cannot read ${none}: it is cut short or damaged, so ffmpeg finds no size for its picture\n`);
+});
+
 test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track it has no audio stream", () => {
   const avif = at("still.avif");
   fs.copyFileSync(path.join(__dirname, "fixtures", "still.avif"), avif);

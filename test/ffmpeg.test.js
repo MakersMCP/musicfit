@@ -479,6 +479,16 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.match(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8"), stream);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0(und): Video: mpeg4 (mp4v / 0x7634706D), none, 160x96, 330 kb/s, 12800 tbr")).video, null);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0[0x100]: Video: mpeg4 ([16][0][0][0] / 0x0010), none, 90k tbr, 90k tbn, 90k tbc")).video, size);
+  // Only the picture -map 0:V:0 copies counts: the video stream of the
+  // lowest number that is not a cover. A second picture or a cover of no
+  // size refuses nothing, also where ffmpeg lists it first, as it lists an
+  // MPEG-TS program by program, and a cover's size is not the picture's.
+  const sized = "Stream #0:0[0x100]: Video: mpeg4 (Simple Profile) ([16][0][0][0] / 0x0010), yuv420p, 160x96 [SAR 1:1 DAR 5:3], 25 fps, 25 tbr, 90k tbn, 25 tbc";
+  const empty = "Stream #0:1[0x101]: Video: mpeg4 ([16][0][0][0] / 0x0010), none, 90k tbr, 90k tbn, 90k tbc";
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `$1${sized}\n$1${empty}`)).video, null);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `  Program 1 \n$1${empty}\n  Program 2 \n$1${sized}`)).video, null);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `$1Stream #0:1: Video: mjpeg (Sequential), none(bt470bg/unknown/unknown), 90k tbr, 90k tbn, 90k tbc (attached pic)\n$1${sized}`)).video, null);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$&\n$1Stream #0:1: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 600x600 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn, 90k tbc (attached pic)")).video, size);
 });
 
 test("the file's own boxes tell an MP4's index cut short as ffmpeg would read them: a moov that runs past the end of the file is cut, unless all it lacks is part of its last box, a udta, and sizes of 8 bytes and of 0 are read; a kind ffmpeg guesses an MP4 by counts only in the first MiB, past ID3v2 tags; an mdat with no moov is data with no index; a HEIF picture is told by its brands", () => {
