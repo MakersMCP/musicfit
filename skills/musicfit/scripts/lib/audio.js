@@ -570,13 +570,18 @@ async function floats(chunks) {
 // second on, for a video's own sound from its picture's first frame: cut
 // where the sound starts before it, silence where the sound starts after it
 // or has a gap, so a second into the sound is a second into the picture.
+// On the timeline it is read only up to `most` seconds past `from`: ffmpeg's
+// atrim drops what comes later before aresample fills a gap, as a timestamp
+// that jumps hours on, as in a damaged file, had it fill those hours with
+// silence, gigabytes of it held by ffmpeg and by musicfit.
 // Refused when it cannot be read, or is cut short or damaged: an MP4, a MOV
 // or an M4A whose index stops part way by its own boxes, as ffmpeg may read
 // part of one and say nothing, or comes after an ID3v2 tag (see
 // refusedByBoxes() in unread.js), and any file ffmpeg says so of as it reads.
-async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0 } = {}) {
+async function decode(file, { rate = RATE, channels = 2, from = null, most = Infinity, stream = 0 } = {}) {
   const timeline = from === null ? [] : ["-copyts"];
-  const align = from === null ? [] : ["-af", `aresample=${rate}:async=1:first_pts=${Math.round(from * rate)}`];
+  const upTo = from !== null && Number.isFinite(most) ? `atrim=end=${(from + most).toFixed(6)},` : "";
+  const align = from === null ? [] : ["-af", `${upTo}aresample=${rate}:async=1:first_pts=${Math.round(from * rate)}`];
   const at = where(file);
   const layout = boxes(at);
   const early = refusedByBoxes(file, layout);

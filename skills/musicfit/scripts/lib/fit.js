@@ -9,7 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { RATE, decode, encodeWav, measure, measureFile, ready } = require("./audio");
-const { probe, fits, ownSound, encodeAac, mux, mark, fpsText } = require("./video");
+const { probe, fits, ownSound, pastEnd, encodeAac, mux, mark, fpsText, PAST } = require("./video");
 const { RATE: ANALYSIS_RATE } = require("./analyze");
 const { analyzeInThread } = require("./thread");
 const { plan } = require("./plan");
@@ -202,7 +202,7 @@ async function readVideo(track, o) {
   // keep sets every sound that stands out over the music, voice dips the
   // music under the stretches long enough to be speech.
   const spans = sound === "voice" ? heard.filter(([a, b]) => b - a >= BLIP) : heard;
-  if (own.over > 0.05) o.warnings.push(`${picture.name}'s own sound runs ${own.over.toFixed(2)} s past the end and was cut there.`);
+  if (own.over > 0.05) o.warnings.push(`${picture.name}'s own sound runs ${pastEnd(own.over)} past the end and was cut there.`);
   const dipped = seconds(spans);
   if (sound === "keep" && plays > 0.6 * o.length) o.warnings.push(`${picture.name}'s own sound plays for ${plays.toFixed(1)} of its ${o.length.toFixed(1)} s, along with the music. If that sound is music of its own, --video-sound drop leaves it out.`);
   if (sound === "voice" && dipped > 0.6 * o.length) o.warnings.push(`${picture.name}'s own sound plays for ${dipped.toFixed(1)} of its ${o.length.toFixed(1)} s, so the music stays dipped most of the way. If that sound is music of its own, --video-sound drop leaves it out.`);
@@ -343,10 +343,12 @@ async function make(track, options, run, video, writes) {
   let spoken = null;
   let spans = [];
   let voiced = 0;
+  // The voice that is the video's own sound is read on its timeline, and
+  // only so far past the end.
+  const timeline = Boolean(video && video.same === "voice");
   if (options.voice) {
     log(`Ducking under ${path.basename(options.voice)}`);
-    // The voice that is the video's own sound is read on its timeline.
-    let v = await split(await decode(options.voice, { rate: RATE, channels: 2, from: video && video.same === "voice" ? video.picture.start : null }));
+    let v = await split(await decode(options.voice, { rate: RATE, channels: 2, from: timeline ? video.picture.start : null, most: options.length + PAST }));
     spoken = { L: new Float32Array(n), R: new Float32Array(n) };
     spoken.L.set(v.L.subarray(0, n));
     spoken.R.set(v.R.subarray(0, n));
@@ -374,7 +376,8 @@ async function make(track, options, run, video, writes) {
     voice = { file: path.basename(options.voice), duck: options.duck, spans, loudness: await normalize(mix, { lufs: options.lufs }) };
     await encodeWav(mix, run.file("mix.wav"));
     mix = null;
-    if (voiced > n + RATE * 0.05) options.warnings.push(`The voice runs ${(voiced / RATE - options.length).toFixed(2)} s past the end and was cut there.`);
+    const over = voiced / RATE - options.length;
+    if (voiced > n + RATE * 0.05) options.warnings.push(`The voice runs ${timeline ? pastEnd(over) : `${over.toFixed(2)} s`} past the end and was cut there.`);
     if (!spans.length) options.warnings.push("No speech was found in the voice track, so the music was not ducked.");
   }
   // The music now dips, so as a whole it reads off the target: quieter,

@@ -286,14 +286,25 @@ function inFrames(info, fps, near) {
   return length >= LENGTH_LEAST && length <= LENGTH_MOST && near(length) ? `, or ${info.frames}f` : "";
 }
 
+// How far past the end of the fit a sound read on the video's timeline is
+// read, in seconds: far enough to tell that it runs on past the end, and by
+// how much up to more than a second, and no further (see decode() in
+// audio.js).
+const PAST = 2;
+
+// How far such a sound runs past the end, `over` seconds of it read there,
+// in words: as many seconds while they stop short of where the read stops,
+// else more than a second.
+const pastEnd = (over) => (over < PAST - 0.5 ? `${over.toFixed(2)} s` : "more than a second");
+
 // The video's own sound on its timeline from `start`, where its picture
 // starts, as { L, R } exactly `n` samples long, and how many seconds of it
-// ran past that and were cut; null when it has none. `stream` is which of
-// its sound streams, from 0.
+// ran past that and were cut (see pastEnd()); null when it has none.
+// `stream` is which of its sound streams, from 0.
 async function ownSound(file, n, start, stream = 0) {
   let x;
   try {
-    x = await decode(file, { rate: RATE, channels: 2, from: start, stream });
+    x = await decode(file, { rate: RATE, channels: 2, from: start, most: n / RATE + PAST, stream });
   } catch (err) {
     if (err.noAudio) return null;
     throw err;
@@ -349,4 +360,4 @@ async function mux(file, sound, out, { picture, comment, start }) {
   if (why) throw new Error(`The video.mp4 this run wrote cannot be read back (${why}), so it was not put in place`);
 }
 
-module.exports = { probe, unread, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST };
+module.exports = { probe, unread, fits, ownSound, pastEnd, encodeAac, mux, mark, fpsText, PAST, LENGTH_LEAST, LENGTH_MOST };

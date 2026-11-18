@@ -1425,6 +1425,46 @@ test("the video's own sound is read on its timeline: a sound that starts a secon
   assert.ok(Math.abs(spans[0].from - 3) < 0.15, JSON.stringify(spans));
 });
 
+test("a video's own sound is read on its timeline only up to two seconds past the end: a timestamp that jumps far on, as in a damaged file, is not filled with silence up to there, as the video's own sound or as the voice, and a sound that runs on past the picture is said to run more than a second past it, or by how much when it stops sooner", async () => {
+  // 12 s of picture whose sound jumps 100 s on at 6 s.
+  const jump = at("jump.mkv");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", effects(), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "mpeg4", "-q:v", "6", "-af", "asetpts=PTS+floor(T/6)*100/TB", "-c:a", "aac", "-b:a", "128k", jump]);
+  const read = await decode(jump, { from: 0, most: 14 });
+  assert.ok(read.length / 2 / RATE < 14.1, `${read.length / 2 / RATE} s`);
+  for (const [name, args] of [
+    ["jump-keep", ["--video", jump, "--video-sound", "keep"]],
+    ["jump-voice", ["--video", jump, "--voice", jump]],
+  ]) {
+    const out = at(name);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", ...args, "--out", out]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.deepEqual(cuesOf(out).warnings.filter((w) => /past the end/.test(w)), [], name);
+  }
+  // A sound that runs on 10 s past its picture, and one half a second.
+  for (const [extra, runs] of [[10, /^long-10\.mp4's own sound runs more than a second past the end and was cut there\.$/], [0.5, /^long-0\.5\.mp4's own sound runs 0\.5\d s past the end and was cut there\.$/]]) {
+    const video = at(`long-${extra}.mp4`);
+    ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-f", "lavfi", "-i", `anoisesrc=d=${12 + extra}:c=pink:a=0.05:r=48000`, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-b:a", "128k", video]);
+    const out = at(`long-${extra}-fit`);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--video-sound", "keep", "--out", out]);
+    assert.equal(run.status, 0, run.stderr);
+    const said = cuesOf(out).warnings.filter((w) => /past the end/.test(w));
+    assert.equal(said.length, 1, JSON.stringify(said));
+    assert.match(said[0], runs);
+  }
+  // As the voice the video's own sound is read the same way, and a voice of
+  // its own is read to its end, so its note says by how much.
+  const voice = wav("voice-13", 13, (x) => x.forEach((_, i) => (x[i] = 0.1 * Math.sin((2 * Math.PI * 330 * i) / RATE))));
+  for (const [name, args, runs] of [
+    ["long-voice-same", ["--video", at("long-10.mp4"), "--voice", at("long-10.mp4")], "The voice runs more than a second past the end and was cut there."],
+    ["long-voice-own", ["--voice", voice], "The voice runs 1.00 s past the end and was cut there."],
+  ]) {
+    const out = at(name);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", ...args, "--out", out]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.deepEqual(cuesOf(out).warnings.filter((w) => /past the end/.test(w)), [runs], name);
+  }
+});
+
 test("an AAC that lifts the true peak over -1 dBTP is limited again and encoded again", { skip: process.platform === "win32" ? "the stand-in is a shell script" : false }, () => {
   const state = at(`hotaac-${process.hrtime.bigint()}`);
   const out = at("hotaac-fit");
