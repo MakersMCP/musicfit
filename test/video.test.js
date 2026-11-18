@@ -1181,6 +1181,29 @@ test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpe
   }
 });
 
+// An MP4, `bytes`, whose moov holds its udta, with the cover in it, before
+// its trak, and whose cover's JPEG past its first four bytes is made bytes
+// no decoder reads. The moov keeps its size, so the places of the picture's
+// data stay true.
+function coverBeforePicture(bytes) {
+  const out = Buffer.from(bytes);
+  const moov = topBoxes(bytes).find((box) => box.kind === "moov");
+  const inside = [];
+  for (let at = moov.at + 8; at + 8 <= moov.at + moov.size; ) {
+    const size = bytes.readUInt32BE(at);
+    inside.push({ kind: bytes.toString("latin1", at + 4, at + 8), at, size });
+    if (size < 8) break;
+    at += size;
+  }
+  const first = (box) => (box.kind === "mvhd" ? 0 : box.kind === "udta" ? 1 : 2);
+  const order = [...inside].sort((a, b) => first(a) - first(b));
+  Buffer.concat(order.map((box) => bytes.subarray(box.at, box.at + box.size))).copy(out, moov.at + 8);
+  const data = out.indexOf("data", out.indexOf("covr", moov.at, "latin1"), "latin1");
+  let seed = 11;
+  for (let i = data + 16; i < data - 4 + out.readUInt32BE(data - 4); i++) out[i] = (seed = (seed * 1103515245 + 12345) % 2147483648) >>> 23;
+  return out;
+}
+
 // An MPEG-TS with the packets of the PIDs `drop` left out, and of the PID
 // `first` its first `some` packets only, from `from` into `to`.
 function withoutPackets(from, to, drop, { first = null, some = 0 } = {}) {
@@ -1242,6 +1265,18 @@ test("a whole video is read by the picture musicfit lays the music under, the on
   ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-c:v", "mpeg4", "-q:v", "6", "-attach", cover, "-metadata:s:t", "mimetype=image/jpeg", covered]);
   assert.match(said(covered), /^\s*Stream #0:1: Video: [^,\n]+, none\b(?!.*\d+x\d+).*\(attached pic\)/m);
   fit(covered);
+  // Such a cover numbered before the picture, as ffmpeg numbers the one of
+  // an MP4 whose udta, with the cover in it, comes before its trak: -map
+  // 0:V:0 leaves a cover out whatever its number.
+  const jpeg = at("small-cover.jpg");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=64x64:d=1", "-frames:v", "1", jpeg]);
+  const withCover = at("with-cover.mp4");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", jpeg, "-map", "0:v", "-map", "1:v", "-c:v:0", "mpeg4", "-q:v", "6", "-c:v:1", "copy", "-disposition:v:1", "attached_pic", "-movflags", "+faststart", withCover]);
+  const coverFirst = at("cover-first.mp4");
+  fs.writeFileSync(coverFirst, coverBeforePicture(fs.readFileSync(withCover)));
+  assert.match(said(coverFirst), /^\s*Stream #0:0\S*: Video: [^,\n]+, none\b(?!.*\d+x\d+).*\(attached pic\)/m);
+  assert.match(said(coverFirst), /^\s*Stream #0:1\S*: Video: .*, 160x96\b/m);
+  fit(coverFirst);
   // The picture -map 0:V:0 copies, with no packets: ffmpeg lists it with
   // no size, and an MP4 cannot take it.
   const none = withoutPackets(two, at("empty-first-picture.ts"), [0x100]);

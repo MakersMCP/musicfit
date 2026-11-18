@@ -508,6 +508,7 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `$1${sized}\n$1${empty}`)).video, null);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `  Program 1 \n$1${empty}\n  Program 2 \n$1${sized}`)).video, null);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `$1Stream #0:1: Video: mjpeg (Sequential), none(bt470bg/unknown/unknown), 90k tbr, 90k tbn, 90k tbc (attached pic)\n$1${sized}`)).video, null);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, `$1Stream #0:0: Video: mjpeg, none(bt470bg/unknown/unknown), 90k tbr, 90k tbn, 90k tbc (attached pic)\n$1${sized.replace("#0:0[0x100]", "#0:1[0x101]")}`)).video, null);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$&\n$1Stream #0:1: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 600x600 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn, 90k tbc (attached pic)")).video, size);
 });
 
