@@ -2176,7 +2176,7 @@ test("a whole video whose name or tags hold the words ffmpeg prints for a damage
   assert.equal(run.status, 0, run.stderr);
 });
 
-test("a whole video whose name or a tag's key holds a line like ffmpeg's for a picture of no size fits on every ffmpeg: such a line words a refusal only where ffmpeg fails on the picture", () => {
+test("a whole video whose name or a tag's key holds a line like ffmpeg's for a picture of no size fits on every ffmpeg, as such a line words a refusal only where ffmpeg fails on the picture, and one like a picture of another kind is taken for the picture's, as the README's Limits say", () => {
   const whole = film("film12", {});
   // ffmpeg prints a tag's key as it is, so a key that holds a line break
   // makes a line of its own, here before the picture's own.
@@ -2197,6 +2197,17 @@ test("a whole video whose name or a tag's key holds a line like ffmpeg's for a p
     assert.equal(run.status, 0, `${video}: ${run.stderr}`);
     assert.deepEqual(packets(path.join(out, "video.mp4")), packets(video), video);
   }
+  // A line that reads like a picture of another kind is taken for the
+  // picture's, as the README's Limits say: as HEVC, which video.mp4 tags
+  // hvc1, so the copy of this MPEG-4 picture into it fails, and nothing is
+  // written.
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("- A video whose name, or the key of one of its tags, holds a line break and then words like those ffmpeg lists a stream with is read by those words as well, as ffmpeg prints a name and a key as they are: its picture can be taken for another kind, so that the run fails as it writes `video.mp4`"));
+  const hevc = at("keyed hevc.mp4");
+  ffmpeg(["-i", whole, "-c", "copy", "-movflags", "use_metadata_tags", "-metadata", "note\n    Stream #0:0: Video: hevc (Main), yuv420p, 160x96=x", hevc]);
+  const out = at("keyed-hevc-fit");
+  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", hevc, "--out", out]);
+  assert.equal(run.status, 1, run.stderr);
+  assert.ok(!fs.existsSync(out), run.stderr);
 });
 
 test("a picture that starts after the top of its file, as in a fragmented MP4 with B-frames, is measured from its first frame, and in video.mp4 it starts with the sound", async () => {
