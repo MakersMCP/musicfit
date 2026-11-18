@@ -1182,14 +1182,38 @@ test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpe
   assert.equal(track.stderr.split("\n").filter(Boolean).pop(), `musicfit: ${avif} has no audio stream`);
 });
 
-test("a whole MP4 behind an ID3v2 tag is fitted by an ffmpeg that reads past the tag, and an ffmpeg that does not, as ffmpeg 9 does not, has it told so, never that it is cut short", () => {
+test("a whole MP4 or M4A behind an ID3v2 tag is refused on every ffmpeg, as the video, the track and the voice, with a copy without the tag asked for: an ffmpeg that reads past the tag reads every packet of the picture from the wrong place", () => {
+  const whole = film("film12", {});
   const tagged = at("whole tagged.mp4");
-  fs.writeFileSync(tagged, Buffer.concat([id3(), fs.readFileSync(film("film12", {}))]));
-  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", tagged, "--out", at("whole-tagged-fit")]);
-  if (/moov atom not found/.test(said(tagged))) {
+  fs.writeFileSync(tagged, Buffer.concat([id3(), fs.readFileSync(whole)]));
+  // ffmpeg 4.4 and 8 read past the tag, each packet as many bytes early as
+  // the tag is long: the same sizes, other bytes. ffmpeg 9 finds no index
+  // behind the tag.
+  if (!/moov atom not found/.test(said(tagged))) {
+    const read = packets(tagged);
+    const right = packets(whole);
+    assert.equal(read.length, right.length);
+    assert.ok(read.every((packet, i) => packet.split(",")[0] === right[i].split(",")[0] && packet !== right[i]), `${read.slice(0, 2)} ${right.slice(0, 2)}`);
+  }
+  const song = at("tag-song.m4a");
+  ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12", "-c:a", "aac", "-b:a", "128k", song]);
+  const taggedSong = at("whole tagged song.m4a");
+  fs.writeFileSync(taggedSong, Buffer.concat([id3(), fs.readFileSync(song)]));
+  const runs = [
+    [tagged, [fixture("house").file, "--length", "12", "--hit", "8", "--video", tagged]],
+    [taggedSong, [taggedSong, "--length", "10"]],
+    [taggedSong, [fixture("house").file, "--length", "10", "--voice", taggedSong]],
+  ];
+  for (const [i, [file, args]] of runs.entries()) {
+    const out = at(`refused-tagged-${i}`);
+    const run = cli([...args, "--out", out]);
     assert.equal(run.status, 1, run.stderr);
-    assert.equal(run.stderr, `musicfit: Cannot read ${tagged}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag\n`);
-  } else assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), `musicfit: Cannot read ${file}: it starts with an ID3v2 tag, and ffmpeg can read an MP4, a MOV or an M4A behind one from the wrong place, or not at all: give a copy of it without the tag`, args.join(" "));
+    assert.ok(!fs.existsSync(out), args.join(" "));
+  }
+  // The same sound without the tag goes through.
+  const fit = cli([song, "--length", "10", "--out", at("untagged-fit")]);
+  assert.equal(fit.status, 0, fit.stderr);
 });
 
 test("a video whose own sound is cut short is refused when that sound would be laid in, and goes with --video-sound drop", () => {

@@ -15,7 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { RATE, run, decode, gone, where, reason } = require("./audio");
 const { blocks } = require("./breathe");
-const { damaged, boxes, ownLines, noIndex, indexError, unknown, unopened, unnamed } = require("./unread");
+const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed } = require("./unread");
 
 const num = (x, digits) => String(Number(x.toFixed(digits)));
 
@@ -73,7 +73,7 @@ function unread(file, said, layout) {
   const own = ownLines(said, at);
   const index = noIndex(own, layout);
   if (index === "picture") return new Error(`${name} is a still picture, not a video`);
-  if (index) return indexError(file, index);
+  if (index) return indexError(file);
   if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
   if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
   if (/Invalid data found/.test(own)) return unknown(file);
@@ -96,11 +96,13 @@ async function probe(file) {
   const size = (fs.statSync(file, { throwIfNoEntry: false }) || {}).size;
   if (size === 0) throw new Error(`Cannot read ${file}: it is empty`);
   // An MP4 or a MOV whose index stops part way, as one whose recording or
-  // download was cut off inside it. Where it stops in the list of where the
+  // download was cut off inside it: where it stops in the list of where the
   // picture's chunks are, or before the sound's part of it, ffmpeg says
-  // nothing of it and reads a shorter video, or one with no sound.
+  // nothing of it and reads a shorter video, or one with no sound. And one
+  // behind an ID3v2 tag, whose picture ffmpeg can read from the wrong place.
   const layout = boxes(where(file));
-  if (layout.index === "cut") throw indexError(file, "cut");
+  const early = refusedByBoxes(file, layout);
+  if (early) throw early;
   let crc;
   let said;
   try {

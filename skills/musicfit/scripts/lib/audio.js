@@ -12,7 +12,7 @@ const path = require("node:path");
 const { getSystemErrorMap } = require("node:util");
 const { spawn } = require("node:child_process");
 const { CHUNK, breathe } = require("./breathe");
-const { damaged, boxes, ownLines, noIndex, indexError, unknown, unopened, unnamed } = require("./unread");
+const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed } = require("./unread");
 
 const RATE = 48000;
 
@@ -572,13 +572,15 @@ async function floats(chunks) {
 // or has a gap, so a second into the sound is a second into the picture.
 // Refused when it cannot be read, or is cut short or damaged: an MP4, a MOV
 // or an M4A whose index stops part way by its own boxes, as ffmpeg may read
-// part of one and say nothing, and any file ffmpeg says so of as it reads.
+// part of one and say nothing, or comes after an ID3v2 tag (see
+// refusedByBoxes() in unread.js), and any file ffmpeg says so of as it reads.
 async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0 } = {}) {
   const timeline = from === null ? [] : ["-copyts"];
   const align = from === null ? [] : ["-af", `aresample=${rate}:async=1:first_pts=${Math.round(from * rate)}`];
   const at = where(file);
   const layout = boxes(at);
-  if (layout.index === "cut") throw indexError(file, "cut");
+  const early = refusedByBoxes(file, layout);
+  if (early) throw early;
   let read;
   try {
     read = await run(["-v", "error", ...timeline, "-i", at, "-map", `0:a:${stream}`, "-vn", ...align, "-ac", String(channels), "-ar", String(rate), "-f", "f32le", "pipe:1"]);
@@ -610,7 +612,7 @@ function unreadSound(file, said, layout) {
   const own = ownLines(said, at);
   const index = noIndex(own, layout);
   if (index === "picture" || /matches no streams/.test(own)) return new Error(`${file} has no audio stream`);
-  if (index) return indexError(file, index);
+  if (index) return indexError(file);
   if (/Invalid data found/.test(own)) return unknown(file);
   // A file ffmpeg could not open, in ffmpeg's words for it.
   if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);

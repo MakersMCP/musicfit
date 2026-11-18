@@ -357,10 +357,10 @@ test("a track or a video is said to be missing only when it is: a No such file o
   }
 });
 
-test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any system, together with the file's own boxes: an MP4 or a MOV with no whole index, also behind ID3v2 tags or a box no format knows, or a MOV that starts with its wide box; a HEIF picture; a whole MP4 behind an ID3v2 tag, which ffmpeg 9 does not read; a file that ended early, unless ffmpeg only guessed what it is; a picture of no size; and a file ffmpeg could not open", () => {
+test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any system, together with the file's own boxes: an MP4 or a MOV with no whole index, also behind ID3v2 tags or a box no format knows, or a MOV that starts with its wide box; a HEIF picture; an MP4 behind ID3v2 tags, refused before ffmpeg reads it when its index is whole; a file that ended early, unless ffmpeg only guessed what it is; a picture of no size; and a file ffmpeg could not open", () => {
   const { unread } = require("../skills/musicfit/scripts/lib/video");
   const { unreadSound, where } = require("../skills/musicfit/scripts/lib/audio");
-  const { boxes } = require("../skills/musicfit/scripts/lib/unread");
+  const { boxes, refusedByBoxes } = require("../skills/musicfit/scripts/lib/unread");
   const folder = outDir("failure-lines");
   fs.mkdirSync(folder, { recursive: true });
   const put = (name, ...parts) => {
@@ -435,17 +435,25 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.deepEqual(read("heif", "4.4", still), { video: "still.avif is a still picture, not a video", sound: `${still} has no audio stream` });
   const notStill = put("meta.mp4", ftyp, meta, box("mdat", Buffer.alloc(32)));
   assert.deepEqual(read("heif", "4.4", notStill), index(notStill));
-  // ffmpeg 9 finds no index behind an ID3v2 tag, and says so of a whole
-  // file just as of one with none, as its index is gone.
+  // A whole index behind ID3v2 tags is refused before ffmpeg reads the
+  // file, on every ffmpeg, and one cut short behind them as cut short.
+  // Behind them a file with no index at all is one whose index is gone, as
+  // ffmpeg 9 says of every file behind a tag.
   const moov = box("moov", box("mvhd", Buffer.alloc(100)));
+  const early = (file) => (refusedByBoxes(file, boxes(file)) || {}).message || null;
   for (const tags of [[id3()], [id3(), id3()], [id3(0x10)]]) {
     const whole = put("tagged whole.mp4", ...tags, ftyp, box("mdat", Buffer.alloc(32)), moov);
-    assert.deepEqual(read("tagged-index", "9.0", whole), both(`Cannot read ${whole}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag`));
+    assert.equal(early(whole), `Cannot read ${whole}: it starts with an ID3v2 tag, and ffmpeg can read an MP4, a MOV or an M4A behind one from the wrong place, or not at all: give a copy of it without the tag`);
+    const cut = put("tagged cut.mp4", ...tags, ftyp, box("mdat", Buffer.alloc(32)), moov.subarray(0, moov.length - 20));
+    assert.equal(early(cut), `Cannot read ${cut}: it is cut short or damaged, so ffmpeg finds no index in it`);
     // An index ffmpeg finds and cannot read is damaged, tag or not.
     assert.deepEqual(read("cut-index", "9.0", whole), index(whole));
   }
   const gone = put("tagged gone.mp4", id3(), ftyp, box("mdat", Buffer.alloc(32)));
+  assert.equal(early(gone), null);
   assert.deepEqual(read("tagged-index", "9.0", gone), index(gone));
+  const plain = put("plain.mp4", ftyp, box("mdat", Buffer.alloc(32)), moov);
+  assert.equal(early(plain), null);
   // A picture ffmpeg 4.4 knows no size of, which it will not copy; ffmpeg
   // 8 and 9 copy none of its frames. The tags it lists are not lines of its
   // own, whatever words they hold.

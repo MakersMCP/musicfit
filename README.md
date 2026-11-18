@@ -78,6 +78,7 @@ musicfit cannot tell speech from sound effects or from music, so a video with mo
 A video is refused before any work when it:
 
 - cannot be read, or is cut short or damaged
+- is an MP4 or a MOV that starts with an ID3v2 tag: give a copy without the tag
 - has no picture, or only a still one
 - holds a picture an MP4 cannot take without encoding it again (ProRes, DNxHD, VP8): give an H.264 or HEVC copy
 - is not `--length` long, to a frame: the message gives the length to use, 3600 for a video at most a frame past the hour and 1 for one at most a frame under a second; a video more than a frame past the hour is asked for a cut of an hour or less, and one more than a frame under a second gets no fit
@@ -168,7 +169,7 @@ npx musicfit@latest <track> --length <time> [options]
   --json            print cues.json instead of a summary
 ```
 
-Times are seconds unless they end in `f`, which counts frames at `--fps`, or with `--video` and no `--fps` at the video's frame rate. The track can be any file ffmpeg reads, the sound of a video included. A track, a voice or a video that is cut short or damaged is refused where ffmpeg says so as it reads it, or, for an MP4, a MOV or an M4A, where the file's own index stops part way; [Limits](#limits) says what it cannot tell. musicfit reads files, not addresses: a track, a voice or a video given as `https://...` is refused, so download it first.
+Times are seconds unless they end in `f`, which counts frames at `--fps`, or with `--video` and no `--fps` at the video's frame rate. The track can be any file ffmpeg reads, the sound of a video included. A track, a voice or a video that is cut short or damaged is refused where ffmpeg says so as it reads it, or, for an MP4, a MOV or an M4A, where the file's own index stops part way; [Limits](#limits) says what it cannot tell. An MP4, a MOV or an M4A that starts with an ID3v2 tag is refused too: ffmpeg 4.4 and 8 read most such files' picture and sound from the wrong place, as their index counts from the first byte of the file without the tag, and ffmpeg 9 does not read them at all, so give a copy without the tag. musicfit reads files, not addresses: a track, a voice or a video given as `https://...` is refused, so download it first.
 
 Some runs:
 

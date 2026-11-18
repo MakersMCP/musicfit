@@ -146,20 +146,31 @@ function ownLines(said, at) {
 // What ffmpeg's lines for a file with no whole index, on its own lines
 // `own`, say of the file its boxes, `layout`, lay out (see boxes()): null
 // when they are not there or the file is no MP4 or MOV; "picture" for a
-// HEIF picture, which has no index at all; "tagged" for a file whose index
-// is whole behind an ID3v2 tag it starts with, as ffmpeg 9 finds none
-// behind one; else "cut".
+// HEIF picture, which has no index at all; else "cut".
 function noIndex(own, layout) {
   if (!layout.mp4 || !(NO_MOOV.test(own) || NO_HEADER.test(own))) return null;
   if (layout.picture) return "picture";
-  if (layout.tagged && layout.index === "whole" && NO_MOOV.test(own)) return "tagged";
   return "cut";
 }
 
 // The refusal of a file with no whole index, as noIndex() finds it.
-function indexError(file, index) {
-  if (index === "tagged") return new Error(`Cannot read ${file}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag`);
-  return new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no index in it`);
+const indexError = (file) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no index in it`);
+
+// The refusal, before ffmpeg runs, of an MP4, a MOV or an M4A whose own
+// boxes, `layout` (see boxes()), show it cannot be read whole: one whose
+// index runs past the end of the file, as ffmpeg can read part of such a
+// file and say nothing of it, and one whose whole index comes after an
+// ID3v2 tag. Most such files give the places of their picture and sound
+// counted from the first byte of the file the tag was put in front of:
+// ffmpeg 4.4 and 8 pass over the tag and read every sample as many bytes
+// early as the tag is long, and ffmpeg 9 finds no index behind the tag. A
+// fragmented MP4 whose fragments count from themselves reads right on 4.4
+// and 8, and is refused all the same, as telling it apart would take
+// reading every fragment. null when the boxes show neither.
+function refusedByBoxes(file, layout) {
+  if (layout.index === "cut") return indexError(file);
+  if (layout.tagged && layout.index === "whole") return new Error(`Cannot read ${file}: it starts with an ID3v2 tag, and ffmpeg can read an MP4, a MOV or an M4A behind one from the wrong place, or not at all: give a copy of it without the tag`);
+  return null;
 }
 
 // The refusal of a file ffmpeg found no data it could read in: it says so
@@ -179,4 +190,4 @@ function unopened(said, at) {
 // start a line with it, so that the line that says why names no path.
 const unnamed = (said, at) => said.split(`${at}: `).join("").split(at).join("");
 
-module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, unknown, unopened, unnamed };
+module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed };
