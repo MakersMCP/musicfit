@@ -1,0 +1,5 @@
+[in#0 @ 0x6185c95e3c40] invalid size 0 in stsd
+[in#0 @ 0x6185c95e3c40] error reading header
+[in#0 @ 0x6185c95e3940] Error opening input: Invalid data found when processing input
+Error opening input file cut.mp4.
+Error opening input files: Invalid data found when processing input

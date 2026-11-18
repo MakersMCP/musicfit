@@ -1,0 +1,4 @@
+[in#0 @ 0x63ef0e7c1c40] moov atom not found
+[in#0 @ 0x63ef0e7c1940] Error opening input: Invalid data found when processing input
+Error opening input file cut.mp4.
+Error opening input files: Invalid data found when processing input

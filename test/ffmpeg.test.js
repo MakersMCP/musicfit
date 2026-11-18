@@ -348,3 +348,67 @@ test("a track or a video is said to be missing only when it is: a No such file o
     }
   }
 });
+
+test("what ffmpeg 4.4, 8 and 9 print for an MP4 cut short inside its index or before it is read as such, also for one behind an ID3v2 tag or a box no format knows; for a file that does not start as an MP4, words other demuxers may say are not, nor those for a file ffmpeg only guessed was one by its name", posix, async () => {
+  const { probe } = require("../skills/musicfit/scripts/lib/video");
+  const folder = outDir("index-lines");
+  fs.mkdirSync(folder, { recursive: true });
+  const put = (name, ...parts) => {
+    const file = path.join(folder, name);
+    fs.writeFileSync(file, Buffer.concat(parts));
+    return file;
+  };
+  // An MP4 starts with its ftyp box, as the files these lines were printed
+  // for do. ffmpeg passes over ID3v2 tags before it, and over a box of a
+  // kind it does not know, as it guesses what a file is.
+  const ftyp = Buffer.concat([Buffer.from([0, 0, 0, 28]), Buffer.from("ftypisom", "latin1"), Buffer.from([0, 0, 2, 0]), Buffer.from("isomiso2mp41", "latin1")]);
+  const frame = Buffer.concat([Buffer.from("TIT2", "latin1"), Buffer.from([0, 0, 0, 6, 0, 0, 3]), Buffer.from("title", "latin1")]);
+  const mp4s = [
+    put("cut.mp4", ftyp),
+    put("tagged.mp4", Buffer.from("ID3", "latin1"), Buffer.from([4, 0, 0, 0, 0, 0, frame.length]), frame, ftyp),
+    put("boxed.mp4", Buffer.from([0, 0, 0, 16]), Buffer.from("abcd", "latin1"), Buffer.alloc(8), ftyp),
+  ];
+  const others = [put("notes.txt", Buffer.from("some notes\n")), put("zeros.mp4", Buffer.alloc(64))];
+  const guessed = put("notes.mp4", Buffer.from("not a video\n"));
+  const was = { FFMPEG_PATH: process.env.FFMPEG_PATH, MUSICFIT_TEST_LINES: process.env.MUSICFIT_TEST_LINES };
+  process.env.FFMPEG_PATH = path.join(FIXTURES, "replay", "ffmpeg");
+  try {
+    for (const version of ["4.4", "8.0", "9.0"]) {
+      const lines = (kind) => (process.env.MUSICFIT_TEST_LINES = path.join(FIXTURES, "stderr", `${kind}-${version}.txt`));
+      for (const kind of ["cut-index", "cut-index-eof", "no-index"]) {
+        lines(kind);
+        for (const file of mp4s) await assert.rejects(probe(file), { message: `Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no index in it` }, `${kind}-${version}: ${file}`);
+      }
+      // "error reading header", which other demuxers may say too.
+      lines("cut-index");
+      for (const file of others) await assert.rejects(probe(file), { message: `Cannot read ${file}: ffmpeg does not know this format` }, `cut-index-${version}: ${file}`);
+      lines("cut-index-eof");
+      for (const file of others) await assert.rejects(probe(file), { message: version === "4.4" ? "ffmpeg: error reading header" : "ffmpeg: Error opening input: End of file" }, `cut-index-eof-${version}: ${file}`);
+      lines("low-score");
+      await assert.rejects(probe(guessed), { message: `Cannot read ${guessed}: ffmpeg does not know this format` }, `low-score-${version}`);
+    }
+  } finally {
+    for (const [key, value] of Object.entries(was)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("a file that is no video is not taken for an MP4 cut short when its name, the name of its folder or its tags hold ffmpeg's words for one", async () => {
+  const { probe } = require("../skills/musicfit/scripts/lib/video");
+  const named = [path.join(outDir("moov atom not found"), "notes.txt"), path.join(outDir("error reading header"), "notes.txt")];
+  // A name that holds a line of them, where the system takes one.
+  if (process.platform !== "win32") named.push(path.join(outDir("index-named"), "odd\n[mov,mp4,m4a,3gp,3g2,mj2 @ 0x1] moov atom not found\n.txt"));
+  for (const notes of named) {
+    fs.mkdirSync(path.dirname(notes), { recursive: true });
+    fs.writeFileSync(notes, "some notes\n");
+    await assert.rejects(probe(notes), { message: `Cannot read ${notes}: ffmpeg does not know this format` });
+  }
+  // A sound with no picture, which ffmpeg lists with its tags before it
+  // says so.
+  const tagged = outDir("tagged-sound.m4a");
+  const made = spawnSync(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "aac", "-metadata", "comment=moov atom not found", "-metadata", "title=[mov,mp4,m4a,3gp,3g2,mj2 @ 0x1] error reading header", tagged], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  await assert.rejects(probe(tagged), { message: "tagged-sound.m4a has no picture to lay the music under" });
+});

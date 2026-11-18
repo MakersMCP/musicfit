@@ -1,0 +1,5 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x5d5aaf9f3f80] reached eof, corrupted STTS atom
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x5d5aaf9f3f80] error reading header
+[in#0 @ 0x5d5aaf9f3cc0] Error opening input: End of file
+Error opening input file cut.mp4.
+Error opening input files: End of file

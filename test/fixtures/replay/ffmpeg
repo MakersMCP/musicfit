@@ -1,0 +1,7 @@
+#!/bin/sh
+# Answers -version as the ffmpeg on PATH does, and any other call as an
+# ffmpeg that failed with the lines in $MUSICFIT_TEST_LINES, which one
+# version of ffmpeg printed, so a test reads them on any machine.
+if [ "$1" = -version ]; then exec ffmpeg -version; fi
+cat "$MUSICFIT_TEST_LINES" >&2
+exit 1

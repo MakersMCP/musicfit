@@ -56,9 +56,51 @@ function inputSection(said) {
   return to < 0 ? rest : rest.slice(0, to);
 }
 
-// What ffmpeg says of an MP4 or a MOV with no whole index: none found, or
-// one that stops part way.
-const NO_INDEX = /moov atom not found|^\[mov,[^\]\n]*\] error reading header/m;
+// What ffmpeg's mov demuxer, which reads MP4, MOV, M4A, 3GP and their kin,
+// says of a file with no whole index: none found, or one that stops part
+// way. Only ffmpeg's own lines are read for these, which start at the left
+// edge with what logs them in brackets, never a file's name.
+const NO_MOOV = /^\[[^\]\n]+\] moov atom not found\r?$/m;
+const NO_HEADER = /^\[[^\]\n]+\] error reading header\r?$/m;
+
+// The kinds of box ffmpeg takes a file for an MP4, a MOV or one of their kin
+// by when it guesses what a file is.
+const MP4_BOXES = new Set(["ftyp", "moov", "mdat", "pnot", "udta", "wide", "ediw", "free", "junk", "pict", "skip", "uuid", "prfl"]);
+
+// Whether a file starts as an MP4 or a MOV does: past any ID3v2 tags, which
+// ffmpeg passes over when it guesses a format, a run of boxes, each its size
+// in 4 bytes and its kind in 4, with a kind of MP4_BOXES among them in its
+// first MiB. "error reading header" is no proof of one, as other demuxers
+// may say it too. FFmpeg 4.4 to 8 name the demuxer that says it, as
+// "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x...]", but FFmpeg 9 names every demuxer
+// "[in#0 @ 0x...]" while it opens a file, so its words no longer tell. The
+// file's own first bytes, which tell ffmpeg what it is, tell it the same on
+// every version.
+function mp4Like(file) {
+  let fd;
+  try {
+    fd = fs.openSync(where(file), "r");
+    const head = Buffer.alloc(1 << 20);
+    const got = fs.readSync(fd, head, 0, head.length, 0);
+    let at = 0;
+    // An ID3v2 tag: "ID3", its version in 2 bytes, neither of them 0xff, its
+    // flags in 1, its size in 4 bytes of 7 bits each, and 10 bytes more when
+    // its flags give it a footer.
+    const tag = (i) => head.toString("latin1", i, i + 3) === "ID3" && head[i + 3] !== 0xff && head[i + 4] !== 0xff && [6, 7, 8, 9].every((k) => head[i + k] < 0x80);
+    while (at + 10 <= got && tag(at)) at += 10 + ((head[at + 6] << 21) | (head[at + 7] << 14) | (head[at + 8] << 7) | head[at + 9]) + (head[at + 5] & 0x10 ? 10 : 0);
+    while (at + 8 <= got) {
+      if (MP4_BOXES.has(head.toString("latin1", at + 4, at + 8))) return true;
+      const size = head.readUInt32BE(at);
+      if (size < 8) return false;
+      at += size;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
 
 // Whether ffmpeg, on a file with no picture, lists no stream it could tell
 // anything of. A file that stops early in its index lists none at all, or
@@ -95,9 +137,12 @@ async function probe(file) {
     if (/No such file|does not exist/.test(why) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
     // An MP4 or a MOV that stops before its index or inside it, as one whose
     // recording or download was cut off; a file ffmpeg only guessed was one
-    // is not.
-    if (NO_INDEX.test(why) && !/detected only with low score/.test(why)) throw cutShort("index");
-    if (/Invalid data found|moov atom not found/.test(why)) throw new Error(`Cannot read ${file}: ffmpeg does not know this format`);
+    // is not, nor, where ffmpeg's words may be another demuxer's, one that
+    // does not start as one (see mp4Like()). Read without the file's name,
+    // which may hold a line of such words.
+    const own = why.split(where(file)).join("");
+    if (!/detected only with low score/.test(own) && (NO_MOOV.test(own) || (NO_HEADER.test(own) && mp4Like(file)))) throw cutShort("index");
+    if (/Invalid data found/.test(why) || NO_MOOV.test(own)) throw new Error(`Cannot read ${file}: ffmpeg does not know this format`);
     if (/matches no streams/.test(why)) throw noStreams(why) ? cutShort("streams") : new Error(`${name} has no picture to lay the music under`);
     // A picture ffmpeg 4.4 will not even start to copy, as nothing is known
     // of it yet where the index stops; ffmpeg 8 copies none of its frames.

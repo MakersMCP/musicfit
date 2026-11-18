@@ -1,0 +1,3 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55c9708a0e40] reached eof, corrupted STTS atom
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55c9708a0e40] error reading header
+cut.mp4: End of file

@@ -1,0 +1,4 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x58d06519af80] moov atom not found
+[in#0 @ 0x58d06519acc0] Error opening input: Invalid data found when processing input
+Error opening input file cut.mp4.
+Error opening input files: Invalid data found when processing input
