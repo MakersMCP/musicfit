@@ -1301,6 +1301,26 @@ test("a picture ffmpeg lists with no size is refused in words true of every vide
   assert.equal(still.stderr, "musicfit: tagged-still.png is a still picture, not a video\n");
 });
 
+test("a video ffmpeg cannot copy into an MP4 for another reason than its picture's size is named before ffmpeg's words for it, on every ffmpeg: a MOV whose picture's MPEG-4 headers, which give its size, are damaged, so ffmpeg lists the picture with its pixels and no size", () => {
+  const bytes = Buffer.from(fs.readFileSync(film("film12-sound-mov", { sound: effects(), ext: "mov" })));
+  // The headers start at the picture's first start code in its esds box,
+  // in the moov, where the picture's track comes first.
+  const moov = topBoxes(bytes).find((box) => box.kind === "moov");
+  const setup = bytes.indexOf(Buffer.from([0, 0, 1, 0xb0]), bytes.indexOf("esds", moov.at, "latin1"));
+  assert.ok(setup > moov.at, `the headers are at ${setup}`);
+  for (let i = 0; i < 16; i++) bytes[setup + i] = (i * 2654435761) >>> 24;
+  const damaged = at("damaged setup.mov");
+  fs.writeFileSync(damaged, bytes);
+  assert.match(said(damaged), /^\s*Stream #0:0\S*: Video: mpeg4 [^,\n]*, yuv420p, (?!.*\d+x\d+)/m);
+  const out = at("refused-damaged-setup");
+  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", damaged, "--video-sound", "keep", "--out", out]);
+  assert.equal(run.status, 1, run.stderr);
+  const lines = run.stderr.split("\n").filter(Boolean);
+  assert.equal(lines.length, 1, run.stderr);
+  assert.ok(lines[0].startsWith(`musicfit: Cannot read ${damaged}: ffmpeg: `), run.stderr);
+  assert.ok(!fs.existsSync(out));
+});
+
 test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track it has no audio stream", () => {
   const avif = at("still.avif");
   fs.copyFileSync(path.join(__dirname, "fixtures", "still.avif"), avif);

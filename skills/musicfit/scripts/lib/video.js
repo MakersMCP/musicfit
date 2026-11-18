@@ -239,7 +239,9 @@ async function probe(file) {
     // A picture of no size, which no MP4 takes: ffmpeg 8 and 9 read its
     // packets above, and fail here.
     if (sizeless(pictureLine)) throw noSize(file);
-    throw err;
+    // Else the line that says why, after the file's name, as a damaged
+    // picture's setup can leave ffmpeg with its pixels and no size.
+    throw new Error(`Cannot read ${file}: ${err.message}`);
   }
 
   // A steady rate from the first frame to the last, which a timebase in
