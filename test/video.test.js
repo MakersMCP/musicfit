@@ -1135,7 +1135,7 @@ test("an MP4 or a MOV cut short inside its index is said to be, wherever in the 
   refused(wide);
 });
 
-test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpeg only guessed the kind of is not: a Matroska file cut after 600 bytes, also in folders named with ffmpeg's words, an MPEG-TS whose picture ffmpeg knows no size of where it stops, an AVI cut where its frames start, three bytes of text named .mkv, and text named .aac, which ffmpeg cannot open", () => {
+test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpeg only guessed the kind of is not: a Matroska file cut after 600 bytes, also in folders named with ffmpeg's words, an MPEG-TS whose picture ffmpeg knows no size of where it stops, an FLV whose head that gives the size is zeroed, an AVI cut where its frames start, three bytes of text named .mkv, and text named .aac, which ffmpeg cannot open", () => {
   const cut = (from, name, size) => {
     fs.mkdirSync(path.dirname(at(name)), { recursive: true });
     fs.writeFileSync(at(name), fs.readFileSync(from).subarray(0, size));
@@ -1149,17 +1149,27 @@ test("a video ffmpeg finds cut short as it opens it is said to be, and one ffmpe
   fs.writeFileSync(at("notes.mkv"), "ok\n");
   fs.writeFileSync(at("notes.aac"), "some notes\n");
   const unknown = "it is not a kind of file ffmpeg reads, or it is cut short or damaged";
-  for (const [video, why] of [
+  const noSize = /^it is cut short or damaged, so ffmpeg finds no size for its picture$/;
+  const cases = [
     [cut(mkv, "cut-600.mkv", 600), /^it is cut short or damaged$/],
     [cut(mkv, path.join("detected only with low score", "cut-600.mkv"), 600), /^it is cut short or damaged$/],
     [cut(mkv, path.join("Invalid data found", "cut-600.mkv"), 600), /^it is cut short or damaged$/],
-    [cut(ts, "cut-600.ts", 600), /^it is cut short or damaged, so ffmpeg finds no frames in it$/],
+    [cut(ts, "cut-600.ts", 600), noSize],
     [cut(avi, "cut-at-frames.avi", frames), new RegExp(`^${unknown}$`)],
     [at("notes.mkv"), new RegExp(`^${unknown}$`)],
     // ffmpeg's words, which differ from one version to the next.
     [at("notes.aac"), /^ffmpeg: (?:Error opening input: )?End of file$/],
     [cut(at("notes.aac"), path.join("Invalid data found", "notes.aac"), 100), /^ffmpeg: (?:Error opening input: )?End of file$/],
-  ]) {
+  ];
+  // An FLV of H.264, which gives its picture's size in a packet at its head,
+  // zeroed there: ffmpeg 4.4 will not copy a picture of no size, and 8 and
+  // 9 copy its packets, but no MP4 takes it.
+  if (/\blibx264\b/.test(spawnSync(FFMPEG, ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout)) {
+    const flv = fs.readFileSync(film("film12-sound-flv", { sound: effects(), ext: "flv", codec: ["-c:v", "libx264"] }));
+    fs.writeFileSync(at("zero-head.flv"), Buffer.concat([flv.subarray(0, 100), Buffer.alloc(400), flv.subarray(500)]));
+    cases.push([at("zero-head.flv"), noSize]);
+  }
+  for (const [video, why] of cases) {
     const out = at(`refused-${path.basename(video)}`);
     const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--out", out]);
     assert.equal(run.status, 1, `${video}: ${run.stderr}`);

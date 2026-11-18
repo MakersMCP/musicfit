@@ -46,15 +46,19 @@ function inputSection(said) {
   return to < 0 ? rest : rest.slice(0, to);
 }
 
-// Whether ffmpeg lists a picture it knows nothing of the size of: where a
-// file stops before it says, ffmpeg 4.4 will not even start to copy the
-// picture, and ffmpeg 8 and 9 copy none of its frames. Its kind, if known,
-// comes before the first comma, then "none" where its pixels are named, and
-// no size such as ", 160x96" after. A stream's number in the file, as in
-// [0x100], is no size.
+// Whether ffmpeg lists a picture it knows nothing of the size of, as where
+// a file stops before it says, or where what says it is damaged: ffmpeg 4.4
+// will not even start to copy such a picture, and an MP4 cannot take it, so
+// ffmpeg 8 and 9, which copy what packets it has, fail to start the MP4 the
+// picture goes into. Its kind, if known, comes before the first comma, then
+// "none" where its pixels are named, and no size such as ", 160x96" after.
+// A stream's number in the file, as in [0x100], is no size.
 function sizeless(input) {
   return input.split("\n").some((line) => /^\s*Stream #0:\d+.*: Video: [^,\n]+, none\b/.test(line) && !/, \d+x\d+\b/.test(line));
 }
+
+// The refusal of a video whose picture ffmpeg lists with no size.
+const noSize = (file) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no size for its picture`);
 
 // The refusal of a video ffmpeg finds no frame of, which a file cut short
 // can list a picture with.
@@ -77,7 +81,7 @@ function unread(file, said, layout) {
   if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
   if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
   if (/Invalid data found/.test(own)) return unknown(file);
-  if (sizeless(inputSection(said))) return noFrames(file);
+  if (sizeless(inputSection(said))) return noSize(file);
   // A file ffmpeg could not open, in ffmpeg's words for it.
   if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);
   return null;
@@ -175,8 +179,11 @@ async function probe(file) {
     const whole = d ? Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]) : 0;
     throw new Error(`Cannot read ${file}: it is cut short or damaged (ffmpeg could read ${frames} ${frames === 1 ? "frame" : "frames"}, ${seconds.toFixed(2)} s${whole > seconds + 0.05 ? ` of the ${whole.toFixed(2)} s it says it holds` : ""})`);
   }
+  // A picture of no size, which ffmpeg 4.4 fails on before this, and the
+  // MP4 copy below would fail on.
+  if (sizeless(input)) throw noSize(file);
   // A still picture has its one frame; a file cut short can list a picture
-  // with no frame of it, as an MPEG-TS cut in its first packets does.
+  // with no frame of it.
   if (!frames) throw noFrames(file);
   if (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step) throw new Error(`${name} is a still picture, not a video`);
   // The rate holds steady when every gap is a whole number of steps, give

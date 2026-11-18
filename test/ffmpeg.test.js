@@ -465,21 +465,20 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.deepEqual(read("tagged-index", "9.0", gone), index(gone));
   const plain = put("plain.mp4", ftyp, box("mdat", Buffer.alloc(32)), moov);
   assert.equal(early(plain), null);
-  // A picture ffmpeg 4.4 knows no size of, which it will not copy; ffmpeg
-  // 8 and 9 copy none of its frames. The tags it lists are not lines of its
-  // own, whatever words they hold.
+  // A picture ffmpeg 4.4 knows no size of, which it will not copy. The tags
+  // it lists are not lines of its own, whatever words they hold.
   const sizeless = put("sizeless.mp4", ftyp, moov);
-  const frames = `Cannot read ${sizeless}: it is cut short or damaged, so ffmpeg finds no frames in it`;
-  assert.equal(read("sizeless", "4.4", sizeless).video, frames);
+  const size = `Cannot read ${sizeless}: it is cut short or damaged, so ffmpeg finds no size for its picture`;
+  assert.equal(read("sizeless", "4.4", sizeless).video, size);
   const noted = (lines) => lines.replace(/^( +)handler_name +: VideoHandler$/m, "$&\n$1comment         : a note that ends in: corrupt input packet in stream 0");
   assert.match(noted(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8")), /^ +comment +: a note that ends in: corrupt input packet in stream 0$/m);
-  assert.equal(read("sizeless", "4.4", sizeless, noted).video, frames);
+  assert.equal(read("sizeless", "4.4", sizeless, noted).video, size);
   // A picture listed with its size is not one ffmpeg knows nothing of, and
   // an MPEG-TS stream's number in the file, as [0x100], is no size.
   const stream = /^( +)Stream #0:0\(und\): Video: .*$/m;
   assert.match(fs.readFileSync(path.join(FIXTURES, "stderr", "sizeless-4.4.txt"), "utf8"), stream);
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0(und): Video: mpeg4 (mp4v / 0x7634706D), none, 160x96, 330 kb/s, 12800 tbr")).video, null);
-  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0[0x100]: Video: mpeg4 ([16][0][0][0] / 0x0010), none, 90k tbr, 90k tbn, 90k tbc")).video, frames);
+  assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$1Stream #0:0[0x100]: Video: mpeg4 ([16][0][0][0] / 0x0010), none, 90k tbr, 90k tbn, 90k tbc")).video, size);
 });
 
 test("the file's own boxes tell an MP4's index cut short as ffmpeg would read them: a moov that runs past the end of the file is cut, unless all it lacks is part of its last box, a udta, and sizes of 8 bytes and of 0 are read; a kind ffmpeg guesses an MP4 by counts only in the first MiB, past ID3v2 tags; an mdat with no moov is data with no index; a HEIF picture is told by its brands", () => {
