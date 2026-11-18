@@ -512,21 +512,21 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.equal(read("sizeless", "4.4", sizeless, (lines) => lines.replace(stream, "$&\n$1Stream #0:1: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 600x600 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn, 90k tbc (attached pic)")).video, size);
 });
 
-test("a stream two programs of an MPEG-TS share, which ffmpeg 4.4, 8 and 9 list under each of them, is one stream, a sound or a subtitle", () => {
-  const { inputSection, streamsOf } = require("../skills/musicfit/scripts/lib/video");
+test("a stream two programs of an MPEG-TS share, which ffmpeg 4.4, 8 and 9 list under each of them, is one stream, a sound or a subtitle, as a run reads them", () => {
+  const { listing } = require("../skills/musicfit/scripts/lib/video");
   for (const version of ["4.4", "8.0", "9.0"]) {
-    const input = inputSection(fs.readFileSync(path.join(FIXTURES, "stderr", `shared-ts-${version}.txt`), "utf8"));
+    const said = fs.readFileSync(path.join(FIXTURES, "stderr", `shared-ts-${version}.txt`), "utf8");
     // The sound stream, under both programs.
-    assert.equal(input.split("\n").filter((line) => /^\s*Stream #0:1\[0x101\]: Audio: /.test(line)).length, 2, version);
-    const sounds = streamsOf(input, "Audio");
-    assert.equal(sounds.length, 1, version);
-    assert.match(sounds[0], /^\s*Stream #0:1\[0x101\]: Audio: aac /, version);
-    assert.equal(streamsOf(input, "Subtitle").length, 0, version);
+    assert.equal(said.split("\n").filter((line) => /^\s*Stream #0:1\[0x101\]: Audio: /.test(line)).length, 2, version);
+    const read = listing(said);
+    assert.match(read.picture, /^\s*Stream #0:0\[0x100\]: Video: mpeg4 /, version);
+    assert.equal(read.sounds.length, 1, version);
+    assert.match(read.sounds[0], /^\s*Stream #0:1\[0x101\]: Audio: aac /, version);
+    assert.equal(read.subtitles.length, 0, version);
     // The same stream as a subtitle, as DVB subtitles come in a TS.
-    const subtitled = input.replace(/Audio: aac \(LC\) \(\[15\]\[0\]\[0\]\[0\] \/ 0x000F\)[^\n]*/g, "Subtitle: dvb_subtitle ([6][0][0][0] / 0x0006)");
+    const subtitled = said.replace(/Audio: aac \(LC\) \(\[15\]\[0\]\[0\]\[0\] \/ 0x000F\)[^\n]*/g, "Subtitle: dvb_subtitle ([6][0][0][0] / 0x0006)");
     assert.equal(subtitled.split("\n").filter((line) => /: Subtitle: /.test(line)).length, 2, version);
-    assert.equal(streamsOf(subtitled, "Subtitle").length, 1, version);
-    assert.equal(streamsOf(subtitled, "Audio").length, 0, version);
+    assert.deepEqual([listing(subtitled).subtitles.length, listing(subtitled).sounds.length], [1, 0], version);
   }
 });
 
@@ -624,6 +624,33 @@ test("an ffmpeg stopped by a signal while it reads a video or a sound leaves a s
         return true;
       });
     }
+  } finally {
+    if (was === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = was;
+  }
+});
+
+test("an ffmpeg stopped by a signal while it copies a frame of the picture into an MP4 leaves a stopped run, not a file it cannot read", posix, async () => {
+  const { probe } = require("../skills/musicfit/scripts/lib/video");
+  const real = process.env.FFMPEG_PATH ? path.resolve(process.env.FFMPEG_PATH) : spawnSync("sh", ["-c", "command -v ffmpeg"], { encoding: "utf8" }).stdout.trim();
+  const folder = outDir("stopped-copying");
+  fs.mkdirSync(folder, { recursive: true });
+  const film = path.join(folder, "film.mp4");
+  const made = spawnSync(real, ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=2", "-c:v", "mpeg4", "-q:v", "6", film], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  // The real ffmpeg, but for the copy of one frame into an MP4, which ends
+  // as an ffmpeg that Ctrl-C stopped.
+  const standIn = path.join(folder, "ffmpeg");
+  fs.writeFileSync(standIn, `#!/bin/sh\ncase " $* " in\n  *" -frames:v 1 -f mp4 "*) echo "Exiting normally, received signal 2." >&2; exit 255 ;;\nesac\nexec "${real}" "$@"\n`);
+  fs.chmodSync(standIn, 0o755);
+  const was = process.env.FFMPEG_PATH;
+  process.env.FFMPEG_PATH = standIn;
+  try {
+    await assert.rejects(probe(film), (err) => {
+      assert.ok(err.stopped, err.message);
+      assert.ok(!err.message.startsWith("Cannot read"), err.message);
+      return true;
+    });
   } finally {
     if (was === undefined) delete process.env.FFMPEG_PATH;
     else process.env.FFMPEG_PATH = was;
