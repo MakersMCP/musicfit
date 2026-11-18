@@ -1182,6 +1182,21 @@ test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpe
   assert.equal(track.stderr.split("\n").filter(Boolean).pop(), `musicfit: ${avif} has no audio stream`);
 });
 
+test("a JPEG XL picture in its box is never taken for an MP4 cut short: where ffmpeg reads JPEG XL it is a still picture with no audio stream, and where it does not, as ffmpeg 4.4 takes it for an MP4 with no moov, it is a file ffmpeg does not read, as the video, the track and the voice", () => {
+  const jxl = at("still.jxl");
+  fs.copyFileSync(path.join(__dirname, "fixtures", "still.jxl"), jxl);
+  const reads = /^\s*D\S*\s+jpegxl_pipe\b/m.test(spawnSync(FFMPEG, ["-hide_banner", "-demuxers"], { encoding: "utf8" }).stdout);
+  const unknown = `musicfit: Cannot read ${jxl}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`;
+  const video = cli([fixture("house").file, "--length", "12", "--video", jxl, "--out", at("refused-still-jxl")]);
+  assert.equal(video.status, 1, video.stderr);
+  assert.equal(video.stderr, `${reads ? "musicfit: still.jxl is a still picture, not a video" : unknown}\n`);
+  for (const [i, args] of [[jxl, "--length", "12"], [fixture("house").file, "--length", "12", "--voice", jxl]].entries()) {
+    const run = cli([...args, "--out", at(`still-jxl-${i}`)]);
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stderr.split("\n").filter(Boolean).pop(), reads ? `musicfit: ${jxl} has no audio stream` : unknown, args.join(" "));
+  }
+});
+
 test("a whole MP4 or M4A behind an ID3v2 tag is refused on every ffmpeg, as the video, the track and the voice, with a copy without the tag asked for: an ffmpeg that reads past the tag reads every packet of the picture from the wrong place", () => {
   const whole = film("film12", {});
   const tagged = at("whole tagged.mp4");

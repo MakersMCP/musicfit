@@ -50,13 +50,15 @@ const MOST = 10000;
 // is "whole" or "cut" (index), cut when it runs past the end of the file,
 // as when a recording or a download stopped inside it, unless all it lacks
 // is part of its last box, a udta, which holds the file's tags, and null
-// when there is none; and whether it is a HEIF picture, as AVIF and HEIC
-// are (picture), by the brands of its ftyp box, with a meta box and no
-// moov. Only what the file's size says it holds is read, and it is opened
-// without waiting, as a named pipe would make it: a pipe, a device or a
-// folder, which states no size or cannot be read, tells nothing.
+// when there is none; whether, with no moov, it has an mdat box, the
+// picture and the sound an index would give the places of (data); and
+// whether it is a HEIF picture, as AVIF and HEIC are (picture), by the
+// brands of its ftyp box, with a meta box and no moov. Only what the
+// file's size says it holds is read, and it is opened without waiting, as a
+// named pipe would make it: a pipe, a device or a folder, which states no
+// size or cannot be read, tells nothing.
 function boxes(at) {
-  const layout = { mp4: false, tagged: false, index: null, picture: false };
+  const layout = { mp4: false, tagged: false, index: null, data: false, picture: false };
   const { O_RDONLY, O_NONBLOCK = 0 } = fs.constants;
   let fd;
   try {
@@ -87,6 +89,7 @@ function boxes(at) {
       if (pos < 1 << 20 && MP4_BOXES.has(kind)) layout.mp4 = true;
       if (kind === "ftyp") heif = brands(fd, pos + header, Math.min(pos + size, end)).some((brand) => HEIF.has(brand));
       if (kind === "meta") meta = true;
+      if (kind === "mdat") layout.data = true;
       if (kind === "moov") {
         layout.index = pos + size <= end || onlyTags(fd, pos + header, pos + size, end) ? "whole" : "cut";
         break;
@@ -94,6 +97,7 @@ function boxes(at) {
       pos += size;
     }
     layout.picture = layout.mp4 && heif && meta && layout.index === null;
+    if (!layout.mp4 || layout.index !== null) layout.data = false;
     if (!layout.mp4) layout.index = null;
     return layout;
   } catch {
@@ -146,10 +150,16 @@ function ownLines(said, at) {
 // What ffmpeg's lines for a file with no whole index, on its own lines
 // `own`, say of the file its boxes, `layout`, lay out (see boxes()): null
 // when they are not there or the file is no MP4 or MOV; "picture" for a
-// HEIF picture, which has no index at all; else "cut".
+// HEIF picture, which has no index at all; "cut" for a file whose index
+// is there or whose data is, the picture and the sound an index would give
+// the places of; else null too. A file with neither may be an MP4 cut
+// before its data as well as a kind of file ffmpeg does not read whose
+// boxes are an MP4's, as ffmpeg 4.4 takes a JPEG XL picture in its box
+// for one and finds no moov in it, so ffmpeg's other words tell it.
 function noIndex(own, layout) {
   if (!layout.mp4 || !(NO_MOOV.test(own) || NO_HEADER.test(own))) return null;
   if (layout.picture) return "picture";
+  if (layout.index === null && !layout.data) return null;
   return "cut";
 }
 
