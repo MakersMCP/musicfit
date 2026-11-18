@@ -1,0 +1,22 @@
+Input #0, mpegts, from 'shared.ts':
+  Duration: 00:00:12.02, start: 1.400000, bitrate: 419 kb/s
+  Program 1 
+    Metadata:
+      service_name    : Service01
+      service_provider: FFmpeg
+  Stream #0:0[0x100]: Video: mpeg4 (Simple Profile) ([16][0][0][0] / 0x0010), yuv420p, 160x96 [SAR 1:1 DAR 5:3], 25 fps, 25 tbr, 90k tbn, start 1.421333
+  Stream #0:1[0x101]: Audio: aac (LC) ([15][0][0][0] / 0x000F), 48000 Hz, stereo, fltp, 14 kb/s, start 1.400000
+  Program 2 
+    Metadata:
+      service_name    : Service02
+      service_provider: FFmpeg
+  Stream #0:1[0x101]: Audio: aac (LC) ([15][0][0][0] / 0x000F), 48000 Hz, stereo, fltp, 14 kb/s, start 1.400000
+Stream mapping:
+  Stream #0:0 -> #0:0 (copy)
+Output #0, framecrc, to 'pipe:1':
+  Metadata:
+    encoder         : Lavf62.3.100
+  Stream #0:0: Video: mpeg4 (Simple Profile) ([16][0][0][0] / 0x0010), yuv420p, 160x96 [SAR 1:1 DAR 5:3], q=2-31, 25 fps, 25 tbr, 90k tbn
+Press [q] to stop, [?] for help
+[out#0/framecrc @ 0x653e198e9b00] video:485KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=  300 fps=0.0 q=-1.0 Lsize=      32KiB time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:00.00    

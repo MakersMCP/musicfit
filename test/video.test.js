@@ -1874,6 +1874,19 @@ test("subtitle streams, which video.mp4 does not hold, are named in a note, what
   assert.doesNotMatch(cli([file, "--length", "12", "--hit", "8", "--video", film("mute"), "--out", at("no-words-fit")]).stdout, /subtitle/);
 });
 
+test("a sound stream two programs of an MPEG-TS share, which ffmpeg lists under each of them, is one stream: a run that keeps it says nothing of other sound streams, on every ffmpeg", () => {
+  const shared = at("shared-sound.ts");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", effects(), "-map", "0:v", "-map", "1:a", "-t", "12", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "aac", "-b:a", "128k", "-program", "program_num=1:st=0:st=1", "-program", "program_num=2:st=1", shared]);
+  assert.equal(said(shared).split("\n").filter((line) => /^\s*Stream #0:1\S*: Audio: /.test(line)).length, 2, said(shared));
+  const out = at("shared-sound-fit");
+  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", shared, "--video-sound", "keep", "--out", out]);
+  assert.equal(run.status, 0, run.stderr);
+  assert.doesNotMatch(run.stdout, /sound streams/);
+  assert.deepEqual(cuesOf(out).warnings.filter((note) => /sound streams/.test(note)), []);
+  assert.doesNotMatch(fs.readFileSync(path.join(out, "FIT.md"), "utf8"), /sound streams/);
+  assert.equal(cuesOf(out).video.sound, "keep");
+});
+
 test("the run's own files are read by their names from their own folder, so an out folder with a % in its name, which the hosted ffmpeg refuses as an input, ends well; a relative FFMPEG_PATH still finds that ffmpeg", { skip: process.platform === "win32" ? "the stand-in is a shell script" : false }, async () => {
   const { file } = fixture("house");
   const repo = path.resolve(__dirname, "..");

@@ -65,6 +65,20 @@ function pictureOf(input) {
   return picture;
 }
 
+// The lines of ffmpeg's lines of the input, `input` (see inputSection()),
+// that list its streams of `kind`, as "Audio" or "Subtitle", one for each
+// stream by its number: ffmpeg lists an MPEG-TS program by program, and a
+// stream two programs share under each of them.
+function streamsOf(input, kind) {
+  const listed = new RegExp(`^\\s*Stream #0:(\\d+)\\b.*: ${kind}: `);
+  const lines = new Map();
+  for (const line of input.split("\n")) {
+    const stream = listed.exec(line);
+    if (stream && !lines.has(stream[1])) lines.set(stream[1], line);
+  }
+  return [...lines.values()];
+}
+
 // Whether ffmpeg lists the picture musicfit reads, on the line `picture`
 // (see pictureOf()), with no size, as where a file stops before it says,
 // or where what says it is damaged: ffmpeg 4.4 will not even start to copy
@@ -150,10 +164,9 @@ async function probe(file) {
   }
 
   const input = inputSection(said);
-  const lines = input.split("\n");
   const pictureLine = pictureOf(input);
-  const soundLines = lines.filter((l) => /^\s*Stream #0:\d+.*: Audio: /.test(l));
-  const subtitleLines = lines.filter((l) => /^\s*Stream #0:\d+.*: Subtitle: /.test(l));
+  const soundLines = streamsOf(input, "Audio");
+  const subtitleLines = streamsOf(input, "Subtitle");
   const format = (/Input #0, ([^,\s]+)/.exec(input) || [])[1] || "";
   // The file's own tags come before its duration; the streams' after.
   const head = input.slice(0, Math.max(0, input.search(/^\s*Duration:/m)));
@@ -394,4 +407,4 @@ async function mux(file, sound, out, { picture, comment, start }) {
   if (why) throw new Error(`The video.mp4 this run wrote cannot be read back (${why}), so it was not put in place`);
 }
 
-module.exports = { probe, unread, fits, ownSound, pastEnd, encodeAac, mux, mark, fpsText, PAST, LENGTH_LEAST, LENGTH_MOST };
+module.exports = { probe, unread, inputSection, streamsOf, fits, ownSound, pastEnd, encodeAac, mux, mark, fpsText, PAST, LENGTH_LEAST, LENGTH_MOST };
