@@ -1605,6 +1605,14 @@ test("a video's own sound is read on its timeline only up to two seconds past th
     assert.equal(run.status, 0, run.stderr);
     assert.deepEqual(cuesOf(out).warnings.filter((w) => /past the end/.test(w)), [runs], name);
   }
+  // The README and SKILL.md say where a voice is read to its end and where
+  // only that far.
+  assert.equal(require("../skills/musicfit/scripts/lib/video").PAST, 2);
+  for (const doc of ["README.md", path.join("skills", "musicfit", "SKILL.md")]) {
+    const text = fs.readFileSync(path.join(__dirname, "..", doc), "utf8");
+    assert.ok(text.includes("a voice, which is read to its end even where it runs on past the fit, unless it is the video's own sound:"), doc);
+    assert.ok(text.includes("The video's own sound, also when it is the voice, is read only up to two seconds past the fit."), doc);
+  }
 });
 
 test("an AAC that lifts the true peak over -1 dBTP is limited again and encoded again", { skip: process.platform === "win32" ? "the stand-in is a shell script" : false }, () => {

@@ -666,6 +666,37 @@ test("a track cut short in its sound, as an MP3, a WAV, a FLAC or an MPEG-TS fil
   }
 });
 
+test("a fragmented MP4 cut inside one of its fragments, as the track or the voice, can read as one that stops at the fragment before, as the README's Limits and SKILL.md say", () => {
+  const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("A fragmented MP4 cut inside one of its fragments, as the track or the voice, can read as one that stops at the fragment before."));
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "SKILL.md"), "utf8").includes("or a fragmented MP4 cut inside one of its fragments, which then stops at the fragment before, can read as a shorter one"));
+  const folder = path.join(dir, "cut-fragments");
+  fs.mkdirSync(folder, { recursive: true });
+  const { file } = fixture("house");
+  // A fragment every 2 s, each with its picture and then its sound.
+  const whole = path.join(folder, "fragments.mp4");
+  const made = spawnSync(FFMPEG, ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", file, "-map", "0:v:0", "-map", "1:a:0", "-t", "12", "-c:v", "mpeg4", "-q:v", "6", "-g", "50", "-c:a", "aac", "-b:a", "128k", "-movflags", "frag_keyframe+empty_moov+default_base_moof", whole], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  const bytes = fs.readFileSync(whole);
+  const data = [];
+  for (let at = 0; at + 8 <= bytes.length; ) {
+    const size = bytes.readUInt32BE(at);
+    if (bytes.toString("latin1", at + 4, at + 8) === "mdat") data.push({ at, size });
+    if (size < 8) break;
+    at += size;
+  }
+  assert.equal(data.length, 6, `${data.length} fragments`);
+  // Half way into the fourth fragment's data, after 6 s of the film.
+  const cut = path.join(folder, "cut fragments.mp4");
+  fs.writeFileSync(cut, bytes.subarray(0, data[3].at + Math.floor(data[3].size / 2)));
+  const track = spawnSync(process.execPath, [CLI, cut, "--length", "2", "--out", path.join(folder, "out track")], { encoding: "utf8" });
+  assert.equal(track.status, 0, track.stderr);
+  const seconds = Number((/Fitted .*? \((\d+\.\d+) s/.exec(track.stdout) || [])[1]);
+  assert.ok(seconds > 5.8 && seconds < 6.3, track.stdout);
+  const voice = spawnSync(process.execPath, [CLI, file, "--length", "10", "--voice", cut, "--out", path.join(folder, "out voice")], { encoding: "utf8" });
+  assert.equal(voice.status, 0, voice.stderr);
+});
+
 test("a video with no sound says so", () => {
   const film = path.join(dir, "silent-film.mp4");
   const made = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=32x32:d=0.5", "-c:v", "mpeg4", film], { encoding: "utf8" });
