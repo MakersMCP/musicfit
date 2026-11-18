@@ -1326,6 +1326,63 @@ test("a whole MP4 or M4A behind an ID3v2 tag is refused on every ffmpeg, as the 
   assert.equal(fit.status, 0, fit.stderr);
 });
 
+test("a WAV or a Matroska file behind an ID3v2 tag is read whole where ffmpeg reads past the tag, as 4.4 and 8 do, and where it does not, as 9 does not, it is refused with the tag named among the causes, as the track, the voice and the video; an MP3 cut in its first frames behind the tag is refused so on every ffmpeg", () => {
+  const behind = (file) => `musicfit: Cannot read ${file}: it starts with an ID3v2 tag, which ffmpeg 9 does not read past in many kinds of file, or it is not a kind of file ffmpeg reads, or it is cut short or damaged: give a whole copy of it without the tag`;
+  // The README and SKILL.md say so in the same words.
+  for (const doc of ["README.md", path.join("skills", "musicfit", "SKILL.md")]) {
+    const text = fs.readFileSync(path.join(__dirname, "..", doc), "utf8");
+    assert.ok(text.includes("ffmpeg 9 does not read past such a tag in many kinds of file, WAV, AIFF, CAF, Matroska, WebM, AVI and ASF among them"), doc);
+    assert.ok(text.includes("a whole copy without the tag"), doc);
+  }
+  const tagged = (from, name) => {
+    fs.writeFileSync(at(name), Buffer.concat([id3(), fs.readFileSync(from)]));
+    return at(name);
+  };
+  const { file: house } = fixture("house");
+  const song = tagged(house, "tagged song.wav");
+  const film12 = tagged(film("film12-house-mkv", { sound: house, ext: "mkv" }), "tagged film.mkv");
+  const runs = [
+    [song, [song, "--length", "10"]],
+    [song, [house, "--length", "10", "--voice", song]],
+    [song, [house, "--length", "12", "--video", song]],
+    [film12, [film12, "--length", "10"]],
+    [film12, [house, "--length", "10", "--voice", film12]],
+    [film12, [house, "--length", "12", "--hit", "8", "--video", film12, "--video-sound", "drop"]],
+  ];
+  for (const [i, [file, args]] of runs.entries()) {
+    const out = at(`behind-a-tag-${i}`);
+    const run = cli([...args, "--out", out]);
+    if (/Invalid data found/.test(said(file))) {
+      assert.equal(run.status, 1, run.stderr);
+      assert.equal(run.stderr.split("\n").filter(Boolean).pop(), behind(file), args.join(" "));
+      assert.ok(!fs.existsSync(out), args.join(" "));
+    } else if (args.includes("--video") && path.extname(file) === ".wav") {
+      assert.equal(run.status, 1, run.stderr);
+      assert.equal(run.stderr, "musicfit: tagged song.wav has no picture to lay the music under\n");
+    } else {
+      assert.equal(run.status, 0, `${args.join(" ")}: ${run.stderr}`);
+    }
+  }
+  // An MP3 cut in its first frames, behind its tag, which every ffmpeg
+  // reads past in an MP3: where ffmpeg finds no data it reads in it, as 8
+  // and 9 do, the tag is named among the causes as well, and ffmpeg 4.4,
+  // which fails to seek in it, is quoted after the file's name.
+  if (/\blibmp3lame\b/.test(spawnSync(FFMPEG, ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout)) {
+    const mp3 = at("tag-source.mp3");
+    ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12", "-c:a", "libmp3lame", mp3]);
+    const cut = at("cut tagged.mp3");
+    fs.writeFileSync(cut, Buffer.concat([id3(), fs.readFileSync(mp3).subarray(0, 200)]));
+    const none = /Invalid data found/.test(said(cut));
+    for (const [i, args] of [[cut, "--length", "10"], [house, "--length", "10", "--voice", cut]].entries()) {
+      const run = cli([...args, "--out", at(`cut-behind-a-tag-${i}`)]);
+      assert.equal(run.status, 1, run.stderr);
+      const line = run.stderr.split("\n").filter(Boolean).pop();
+      if (none) assert.equal(line, behind(cut), args.join(" "));
+      else assert.ok(line.startsWith(`musicfit: Cannot read ${cut}: ffmpeg: `), line);
+    }
+  }
+});
+
 test("a video whose own sound is cut short is refused when that sound would be laid in, also when its name holds the words for a sound that has none, and goes with --video-sound drop", () => {
   // Written in fragments, each with the picture's frames first, then the
   // sound's, here a tone that fills some kilobytes of each: cut a kilobyte

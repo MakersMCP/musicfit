@@ -12,7 +12,7 @@ const path = require("node:path");
 const { getSystemErrorMap } = require("node:util");
 const { spawn } = require("node:child_process");
 const { CHUNK, breathe } = require("./breathe");
-const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed } = require("./unread");
+const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, noData, unopened, unnamed } = require("./unread");
 
 const RATE = 48000;
 
@@ -624,7 +624,7 @@ function unreadSound(file, said, layout) {
   const index = noIndex(own, layout);
   if (index === "picture" || /matches no streams/.test(own)) return noAudio(`${file} has no audio stream`);
   if (index) return indexError(file);
-  if (/Invalid data found/.test(own)) return unknown(file);
+  if (/Invalid data found/.test(own)) return noData(file, layout);
   // A file ffmpeg could not open, in ffmpeg's words for it.
   if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);
   return null;

@@ -403,7 +403,7 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   const others = [put("notes.txt", Buffer.from("some notes\n")), put("zeros.mp4", Buffer.alloc(64)), put("bare.mp4", ftyp), jxl];
   // The lines a version printed, with the name of the file it was given
   // then put back as this file's whole name, as musicfit gives files.
-  const NAMED = { "cut-index": "cut.mp4", "cut-index-eof": "cut.mp4", "no-index": "cut.mp4", "low-score": "notes.mp4", "tagged-index": "tagged.mp4", heif: "still.avif", jxl: "still.jxl", sizeless: "cut.mp4", ended: "cut.mkv", "guessed-ended": "notes.mkv", unopened: "notes.aac" };
+  const NAMED = { "cut-index": "cut.mp4", "cut-index-eof": "cut.mp4", "no-index": "cut.mp4", "low-score": "notes.mp4", "tagged-index": "tagged.mp4", heif: "still.avif", jxl: "still.jxl", sizeless: "cut.mp4", ended: "cut.mkv", "guessed-ended": "notes.mkv", unopened: "notes.aac", "tagged-wav": "tagged.wav", "tagged-mkv": "tagged.mkv", "cut-mp3": "tagged.mp3" };
   const read = (kind, version, file, change = (lines) => lines) => {
     const said = change(fs.readFileSync(path.join(FIXTURES, "stderr", `${kind}-${version}.txt`), "utf8")).split(NAMED[kind]).join(where(file));
     const layout = boxes(where(file));
@@ -465,6 +465,26 @@ test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any
   assert.deepEqual(read("tagged-index", "9.0", gone), index(gone));
   const plain = put("plain.mp4", ftyp, box("mdat", Buffer.alloc(32)), moov);
   assert.equal(early(plain), null);
+  // ffmpeg 9 does not read past an ID3v2 tag in a WAV or a Matroska file,
+  // and finds no data it reads in one: the refusal of a file that starts
+  // with a tag names it among the causes, and the refusal of one with no tag
+  // that ffmpeg says the same of is as it was.
+  const wav = Buffer.concat([Buffer.from("RIFF", "latin1"), Buffer.alloc(4), Buffer.from("WAVEfmt ", "latin1"), Buffer.alloc(24)]);
+  const mkv = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(60)]);
+  for (const [kind, ext, bytes] of [["tagged-wav", "wav", wav], ["tagged-mkv", "mkv", mkv]]) {
+    for (const tags of [[id3()], [id3(), id3()], [id3(0x10)]]) {
+      const tagged = put(`behind a tag.${ext}`, ...tags, bytes);
+      assert.deepEqual(read(kind, "9.0", tagged), both(`Cannot read ${tagged}: it starts with an ID3v2 tag, which ffmpeg 9 does not read past in many kinds of file, or it is not a kind of file ffmpeg reads, or it is cut short or damaged: give a whole copy of it without the tag`), `${kind}: ${tags.length}`);
+    }
+    const bare = put(`no tag.${ext}`, bytes);
+    assert.deepEqual(read(kind, "9.0", bare), unknown(bare), kind);
+  }
+  // An MP3 cut in its first frame behind its tag: ffmpeg 8 and 9 find no
+  // data they read in it, so the tag is named among the causes, and ffmpeg
+  // 4.4 fails to seek in it, which is said in its words after the name.
+  const mp3 = put("cut behind a tag.mp3", id3(), Buffer.from([0xff, 0xfb, 0x90, 0x64]), Buffer.alloc(196));
+  for (const version of ["8.0", "9.0"]) assert.deepEqual(read("cut-mp3", version, mp3), both(`Cannot read ${mp3}: it starts with an ID3v2 tag, which ffmpeg 9 does not read past in many kinds of file, or it is not a kind of file ffmpeg reads, or it is cut short or damaged: give a whole copy of it without the tag`), version);
+  assert.deepEqual(read("cut-mp3", "4.4", mp3), both(`Cannot read ${mp3}: ffmpeg: Invalid argument`));
   // A picture ffmpeg 4.4 knows no size of, which it will not copy. The tags
   // it lists are not lines of its own, whatever words they hold.
   const sizeless = put("sizeless.mp4", ftyp, moov);

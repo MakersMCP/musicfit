@@ -1,0 +1,5 @@
+Truncating packet of size 1246208 to 607149
+[in#0 @ 0x5e2d3c155c40] EBML header parsing failed
+[in#0 @ 0x5e2d3c155940] Error opening input: Invalid data found when processing input
+Error opening input file tagged.mkv.
+Error opening input files: Invalid data found when processing input

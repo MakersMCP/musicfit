@@ -188,6 +188,14 @@ function refusedByBoxes(file, layout) {
 // or damaged in its first bytes alike.
 const unknown = (file) => new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
 
+// The same refusal of a file that starts with an ID3v2 tag, by its boxes,
+// `layout` (see boxes()), with the tag among its causes: ffmpeg 9 does not
+// read past such a tag in a WAV, an AIFF, a CAF, a Matroska, a WebM, an AVI
+// or an ASF file, which ffmpeg 4.4 and 8 read whole, and ffmpeg 8 and 9
+// find no data in an MP3 cut in its first frames, behind the tag an MP3
+// most often has.
+const noData = (file, layout) => (layout.tagged ? new Error(`Cannot read ${file}: it starts with an ID3v2 tag, which ffmpeg 9 does not read past in many kinds of file, or it is not a kind of file ffmpeg reads, or it is cut short or damaged: give a whole copy of it without the tag`) : unknown(file));
+
 // Whether ffmpeg says it could not open the file it was given as `at`:
 // ffmpeg 6.1 and newer name it in "Error opening input file <file>.", and
 // 4.4 to 6.0 start the line that says why with it.
@@ -200,4 +208,4 @@ function unopened(said, at) {
 // start a line with it, so that the line that says why names no path.
 const unnamed = (said, at) => said.split(`${at}: `).join("").split(at).join("");
 
-module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed };
+module.exports = { DAMAGED, damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, noData, unopened, unnamed };

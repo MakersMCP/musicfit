@@ -1,0 +1,4 @@
+[in#0 @ 0x5d96c0bebc40] Failed to find two consecutive MPEG audio frames.
+[in#0 @ 0x5d96c0beb940] Error opening input: Invalid data found when processing input
+Error opening input file tagged.mp3.
+Error opening input files: Invalid data found when processing input

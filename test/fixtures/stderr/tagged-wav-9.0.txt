@@ -1,0 +1,4 @@
+[in#0 @ 0x5b9114bd3c40] invalid start code ID3[4] in RIFF header
+[in#0 @ 0x5b9114bd3940] Error opening input: Invalid data found when processing input
+Error opening input file tagged.wav.
+Error opening input files: Invalid data found when processing input

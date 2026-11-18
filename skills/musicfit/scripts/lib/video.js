@@ -15,7 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { RATE, run, decode, gone, where, reason } = require("./audio");
 const { blocks } = require("./breathe");
-const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, unknown, unopened, unnamed } = require("./unread");
+const { damaged, boxes, ownLines, noIndex, indexError, refusedByBoxes, noData, unopened, unnamed } = require("./unread");
 
 const num = (x, digits) => String(Number(x.toFixed(digits)));
 
@@ -104,7 +104,7 @@ function unread(file, said, layout) {
   if (index) return indexError(file);
   if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
   if (!/detected only with low score/.test(own) && damaged(own)) return new Error(`Cannot read ${file}: it is cut short or damaged`);
-  if (/Invalid data found/.test(own)) return unknown(file);
+  if (/Invalid data found/.test(own)) return noData(file, layout);
   if (sizeless(pictureOf(inputSection(said)))) return noSize(file);
   // A file ffmpeg could not open, in ffmpeg's words for it.
   if (unopened(said, at)) return new Error(`Cannot read ${file}: ${reason(unnamed(said, at))}`);
