@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { RATE, run, decode, gone, where } = require("./audio");
 const { blocks } = require("./breathe");
+const { damaged, boxes, ownLines, noIndex, indexError, unknown } = require("./unread");
 
 const num = (x, digits) => String(Number(x.toFixed(digits)));
 
@@ -36,17 +37,6 @@ function nominal(fps) {
 const mark = (version) => `musicfit ${version}: a fitted track laid under this picture`;
 const MARK = /^musicfit \S+: a fitted track laid under this picture$/;
 
-// What ffmpeg prints while it reads a file that is cut short or has a
-// broken packet: a packet cut off at the end, an MP4's samples past the end
-// of the file, a Matroska or WebM file that stops in the middle. Only its
-// own lines are read for these, never the file's name or its tags (see
-// probe()).
-const DAMAGED = [
-  /^\[[^\]\n]+\] (?:Packet corrupt\b|File ended prematurely\b|stream \d+, offset 0x[0-9a-f]+: partial file\b|corrupt input packet in stream \d+)/m,
-  // ffmpeg 4.4 starts this one with the file's name.
-  /: corrupt input packet in stream \d+\s*$/m,
-];
-
 // What ffmpeg says of the input: its lines from "Input #0" up to the first
 // output.
 function inputSection(said) {
@@ -56,60 +46,27 @@ function inputSection(said) {
   return to < 0 ? rest : rest.slice(0, to);
 }
 
-// What ffmpeg's mov demuxer, which reads MP4, MOV, M4A, 3GP and their kin,
-// says of a file with no whole index: none found, or one that stops part
-// way. Only ffmpeg's own lines are read for these, which start at the left
-// edge with what logs them in brackets, never a file's name.
-const NO_MOOV = /^\[[^\]\n]+\] moov atom not found\r?$/m;
-const NO_HEADER = /^\[[^\]\n]+\] error reading header\r?$/m;
+// The refusal of a video ffmpeg finds no frame of, which a file cut short
+// can list a picture with.
+const noFrames = (file) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no frames in it`);
 
-// The kinds of box ffmpeg takes a file for an MP4, a MOV or one of their kin
-// by when it guesses what a file is.
-const MP4_BOXES = new Set(["ftyp", "moov", "mdat", "pnot", "udta", "wide", "ediw", "free", "junk", "pict", "skip", "uuid", "prfl"]);
-
-// Whether a file starts as an MP4 or a MOV does: past any ID3v2 tags, which
-// ffmpeg passes over when it guesses a format, a run of boxes, each its size
-// in 4 bytes and its kind in 4, with a kind of MP4_BOXES among them in its
-// first MiB. "error reading header" is no proof of one, as other demuxers
-// may say it too. FFmpeg 4.4 to 8 name the demuxer that says it, as
-// "[mov,mp4,m4a,3gp,3g2,mj2 @ 0x...]", but FFmpeg 9 names every demuxer
-// "[in#0 @ 0x...]" while it opens a file, so its words no longer tell. The
-// file's own first bytes, which tell ffmpeg what it is, tell it the same on
-// every version.
-function mp4Like(file) {
-  let fd;
-  try {
-    fd = fs.openSync(where(file), "r");
-    const head = Buffer.alloc(1 << 20);
-    const got = fs.readSync(fd, head, 0, head.length, 0);
-    let at = 0;
-    // An ID3v2 tag: "ID3", its version in 2 bytes, neither of them 0xff, its
-    // flags in 1, its size in 4 bytes of 7 bits each, and 10 bytes more when
-    // its flags give it a footer.
-    const tag = (i) => head.toString("latin1", i, i + 3) === "ID3" && head[i + 3] !== 0xff && head[i + 4] !== 0xff && [6, 7, 8, 9].every((k) => head[i + k] < 0x80);
-    while (at + 10 <= got && tag(at)) at += 10 + ((head[at + 6] << 21) | (head[at + 7] << 14) | (head[at + 8] << 7) | head[at + 9]) + (head[at + 5] & 0x10 ? 10 : 0);
-    while (at + 8 <= got) {
-      if (MP4_BOXES.has(head.toString("latin1", at + 4, at + 8))) return true;
-      const size = head.readUInt32BE(at);
-      if (size < 8) return false;
-      at += size;
-    }
-    return false;
-  } catch {
-    return false;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-}
-
-// Whether ffmpeg, on a file with no picture, lists no stream it could tell
-// anything of. A file that stops early in its index lists none at all, or
-// one it knows nothing about, not even a kind: "Data: none".
-function noStreams(said) {
-  const streams = inputSection(said)
-    .split("\n")
-    .filter((line) => /^\s*Stream #0:\d+/.test(line));
-  return streams.every((line) => /: Data: none(?: \(default\))?\s*$/.test(line));
+// Why `file` cannot be read as a video, from what ffmpeg printed when it
+// failed, `said`, and from the file's own boxes, `layout` (see boxes() in
+// unread.js): an Error, or null when ffmpeg's lines name none of these.
+// Only ffmpeg's own lines are read for them, with the file's name taken
+// out.
+function unread(file, said, layout) {
+  const name = path.basename(file);
+  const own = ownLines(said, where(file));
+  const index = noIndex(own, layout);
+  if (index === "picture") return new Error(`${name} is a still picture, not a video`);
+  if (index) return indexError(file, index);
+  if (/Invalid data found/.test(own)) return unknown(file);
+  if (/matches no streams/.test(own)) return new Error(`${name} has no picture to lay the music under`);
+  // A picture ffmpeg 4.4 will not even start to copy, as nothing is known
+  // of it yet where the file stops; ffmpeg 8 copies none of its frames.
+  if (/^\s*Stream #0:\d+.*: Video: none, none/m.test(inputSection(said))) return noFrames(file);
+  return null;
 }
 
 // The video's picture as its packets give it: how long it is, its frames,
@@ -124,7 +81,12 @@ async function probe(file) {
   const name = path.basename(file);
   const size = (fs.statSync(file, { throwIfNoEntry: false }) || {}).size;
   if (size === 0) throw new Error(`Cannot read ${file}: it is empty`);
-  const cutShort = (what) => new Error(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no ${what} in it`);
+  // An MP4 or a MOV whose index stops part way, as one whose recording or
+  // download was cut off inside it. Where it stops in the list of where the
+  // picture's chunks are, or before the sound's part of it, ffmpeg says
+  // nothing of it and reads a shorter video, or one with no sound.
+  const layout = boxes(where(file));
+  if (layout.index === "cut") throw indexError(file, "cut");
   let crc;
   let said;
   try {
@@ -135,19 +97,7 @@ async function probe(file) {
     if (err.unstarted) throw err;
     const why = err.stderr || err.message;
     if (/No such file|does not exist/.test(why) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
-    // An MP4 or a MOV that stops before its index or inside it, as one whose
-    // recording or download was cut off; a file ffmpeg only guessed was one
-    // is not, nor, where ffmpeg's words may be another demuxer's, one that
-    // does not start as one (see mp4Like()). Read without the file's name,
-    // which may hold a line of such words.
-    const own = why.split(where(file)).join("");
-    if (!/detected only with low score/.test(own) && (NO_MOOV.test(own) || (NO_HEADER.test(own) && mp4Like(file)))) throw cutShort("index");
-    if (/Invalid data found/.test(why) || NO_MOOV.test(own)) throw new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
-    if (/matches no streams/.test(why)) throw noStreams(why) ? cutShort("streams") : new Error(`${name} has no picture to lay the music under`);
-    // A picture ffmpeg 4.4 will not even start to copy, as nothing is known
-    // of it yet where the index stops; ffmpeg 8 copies none of its frames.
-    if (/^\s*Stream #0:\d+.*: Video: none, none/m.test(inputSection(why))) throw cutShort("frames");
-    throw err;
+    throw unread(file, why, layout) || err;
   }
 
   const input = inputSection(said);
@@ -204,14 +154,14 @@ async function probe(file) {
     .split("\n")
     .filter((line) => !/^\s/.test(line))
     .join("\n");
-  if (DAMAGED.some((line) => line.test(reading))) {
+  if (damaged(reading)) {
     const d = /^\s*Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)/m.exec(input);
     const whole = d ? Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]) : 0;
     throw new Error(`Cannot read ${file}: it is cut short or damaged (ffmpeg could read ${frames} ${frames === 1 ? "frame" : "frames"}, ${seconds.toFixed(2)} s${whole > seconds + 0.05 ? ` of the ${whole.toFixed(2)} s it says it holds` : ""})`);
   }
-  // A still picture has its one frame; an index cut short can list a picture
-  // with no frame of it.
-  if (!frames) throw cutShort("frames");
+  // A still picture has its one frame; a file cut short can list a picture
+  // with no frame of it, as an MPEG-TS cut in its first packets does.
+  if (!frames) throw noFrames(file);
   if (frames <= 1 || /^(image2|image2pipe|\w+_pipe)$/.test(format) || !(seconds > 0) || !step) throw new Error(`${name} is a still picture, not a video`);
   // The rate holds steady when every gap is a whole number of steps, give
   // or take a tick of the timebase or a millisecond (a 29.97 fps video in a
@@ -367,7 +317,7 @@ async function mux(file, sound, out, { picture, comment, start }) {
   const name = path.basename(out);
   try {
     const { stderr } = await run(["-v", "error", "-i", name, "-map", "0", "-c", "copy", "-f", "null", "-"], null, { cwd: path.dirname(out) });
-    if (DAMAGED.some((line) => line.test(stderr))) why = "it is cut short";
+    if (damaged(stderr)) why = "it is cut short";
   } catch (err) {
     if (err.stopped || err.unstarted) throw err;
     why = err.message.replace(/^ffmpeg: /, "").split(`${name}: `).join("");
@@ -375,4 +325,4 @@ async function mux(file, sound, out, { picture, comment, start }) {
   if (why) throw new Error(`The video.mp4 this run wrote cannot be read back (${why}), so it was not put in place`);
 }
 
-module.exports = { probe, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST };
+module.exports = { probe, unread, fits, ownSound, encodeAac, mux, mark, fpsText, LENGTH_LEAST, LENGTH_MOST };

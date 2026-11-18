@@ -357,50 +357,157 @@ test("a track or a video is said to be missing only when it is: a No such file o
   }
 });
 
-test("what ffmpeg 4.4, 8 and 9 print for an MP4 cut short inside its index or before it is read as such, also for one behind an ID3v2 tag or a box no format knows; for a file that does not start as an MP4, words other demuxers may say are not, nor those for a file ffmpeg only guessed was one by its name", posix, async () => {
-  const { probe } = require("../skills/musicfit/scripts/lib/video");
-  const folder = outDir("index-lines");
+test("what ffmpeg 4.4, 8 and 9 print when they cannot read a file is read on any system, together with the file's own boxes: an MP4 or a MOV with no whole index, also behind ID3v2 tags or a box no format knows, or a MOV that starts with its wide box; a HEIF picture; and a whole MP4 behind an ID3v2 tag, which ffmpeg 9 does not read", () => {
+  const { unread } = require("../skills/musicfit/scripts/lib/video");
+  const { unreadSound, where } = require("../skills/musicfit/scripts/lib/audio");
+  const { boxes } = require("../skills/musicfit/scripts/lib/unread");
+  const folder = outDir("failure-lines");
   fs.mkdirSync(folder, { recursive: true });
   const put = (name, ...parts) => {
     const file = path.join(folder, name);
     fs.writeFileSync(file, Buffer.concat(parts));
     return file;
   };
-  // An MP4 starts with its ftyp box, as the files these lines were printed
-  // for do. ffmpeg passes over ID3v2 tags before it, and over a box of a
-  // kind it does not know, as it guesses what a file is.
-  const ftyp = Buffer.concat([Buffer.from([0, 0, 0, 28]), Buffer.from("ftypisom", "latin1"), Buffer.from([0, 0, 2, 0]), Buffer.from("isomiso2mp41", "latin1")]);
+  const box = (kind, ...body) => {
+    const inside = Buffer.concat(body);
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(8 + inside.length);
+    return Buffer.concat([size, Buffer.from(kind, "latin1"), inside]);
+  };
+  const brands = (...names) => Buffer.from(names.join(""), "latin1");
+  // An ID3v2.4 tag with one title frame, and one whose flags give it a
+  // footer, which counts 10 bytes more.
   const frame = Buffer.concat([Buffer.from("TIT2", "latin1"), Buffer.from([0, 0, 0, 6, 0, 0, 3]), Buffer.from("title", "latin1")]);
+  const id3 = (flags = 0) => Buffer.concat([Buffer.from("ID3", "latin1"), Buffer.from([4, 0, flags, 0, 0, 0, frame.length]), frame, flags & 0x10 ? Buffer.concat([Buffer.from("3DI", "latin1"), Buffer.from([4, 0, flags, 0, 0, 0, frame.length])]) : Buffer.alloc(0)]);
+  // An MP4 starts with its ftyp box, as the files these lines were printed
+  // for do; ffmpeg passes over ID3v2 tags before it, and over a box of a
+  // kind it does not know, as it guesses what a file is, and a MOV may
+  // start with its wide box.
+  const ftyp = box("ftyp", brands("isom", "\0\0\x02\0", "isom", "iso2", "mp41"));
   const mp4s = [
     put("cut.mp4", ftyp),
-    put("tagged.mp4", Buffer.from("ID3", "latin1"), Buffer.from([4, 0, 0, 0, 0, 0, frame.length]), frame, ftyp),
-    put("boxed.mp4", Buffer.from([0, 0, 0, 16]), Buffer.from("abcd", "latin1"), Buffer.alloc(8), ftyp),
+    put("tagged.mp4", id3(), ftyp),
+    put("tagged twice.mp4", id3(), id3(), ftyp),
+    put("tag with a footer.mp4", id3(0x10), ftyp),
+    put("boxed.mp4", box("abcd", Buffer.alloc(8)), ftyp),
+    put("wide.mov", box("wide"), box("mdat", Buffer.alloc(64))),
   ];
   const others = [put("notes.txt", Buffer.from("some notes\n")), put("zeros.mp4", Buffer.alloc(64))];
-  const guessed = put("notes.mp4", Buffer.from("not a video\n"));
-  const was = { FFMPEG_PATH: process.env.FFMPEG_PATH, MUSICFIT_TEST_LINES: process.env.MUSICFIT_TEST_LINES };
-  process.env.FFMPEG_PATH = path.join(FIXTURES, "replay", "ffmpeg");
-  try {
-    for (const version of ["4.4", "8.0", "9.0"]) {
-      const lines = (kind) => (process.env.MUSICFIT_TEST_LINES = path.join(FIXTURES, "stderr", `${kind}-${version}.txt`));
-      for (const kind of ["cut-index", "cut-index-eof", "no-index"]) {
-        lines(kind);
-        for (const file of mp4s) await assert.rejects(probe(file), { message: `Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no index in it` }, `${kind}-${version}: ${file}`);
-      }
-      // "error reading header", which other demuxers may say too.
-      lines("cut-index");
-      for (const file of others) await assert.rejects(probe(file), { message: `Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` }, `cut-index-${version}: ${file}`);
-      lines("cut-index-eof");
-      for (const file of others) await assert.rejects(probe(file), { message: version === "4.4" ? "ffmpeg: error reading header" : "ffmpeg: Error opening input: End of file" }, `cut-index-eof-${version}: ${file}`);
-      lines("low-score");
-      await assert.rejects(probe(guessed), { message: `Cannot read ${guessed}: it is not a kind of file ffmpeg reads, or it is cut short or damaged` }, `low-score-${version}`);
+  // The lines a version printed, with the name of the file it was given
+  // then put back as this file's whole name, as musicfit gives files.
+  const NAMED = { "cut-index": "cut.mp4", "cut-index-eof": "cut.mp4", "no-index": "cut.mp4", "low-score": "notes.mp4", "tagged-index": "tagged.mp4", heif: "still.avif" };
+  const read = (kind, version, file) => {
+    const said = fs.readFileSync(path.join(FIXTURES, "stderr", `${kind}-${version}.txt`), "utf8").split(NAMED[kind]).join(where(file));
+    const layout = boxes(where(file));
+    const message = (err) => (err ? err.message : null);
+    return { video: message(unread(file, said, layout)), sound: message(unreadSound(file, said, layout)) };
+  };
+  const both = (message) => ({ video: message, sound: message });
+  const index = (file) => both(`Cannot read ${file}: it is cut short or damaged, so ffmpeg finds no index in it`);
+  const unknown = (file) => both(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
+  for (const version of ["4.4", "8.0", "9.0"]) {
+    for (const kind of ["cut-index", "cut-index-eof", "no-index"]) {
+      for (const file of mp4s) assert.deepEqual(read(kind, version, file), index(file), `${kind}-${version}: ${file}`);
     }
-  } finally {
-    for (const [key, value] of Object.entries(was)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+    // "error reading header", which other demuxers may say too, and "moov
+    // atom not found" of a file that is no MP4: ffmpeg's own line says why.
+    for (const file of others) {
+      assert.deepEqual(read("cut-index", version, file), unknown(file), `cut-index-${version}: ${file}`);
+      assert.deepEqual(read("no-index", version, file), unknown(file), `no-index-${version}: ${file}`);
+      assert.deepEqual(read("cut-index-eof", version, file), both(null), `cut-index-eof-${version}: ${file}`);
     }
+    const notes = put("notes.mp4", Buffer.from("not a video\n"));
+    assert.deepEqual(read("low-score", version, notes), unknown(notes), `low-score-${version}`);
   }
+  // ffmpeg 4.4 reads no HEIF picture: an AVIF or a HEIC has a meta box and
+  // no moov. An MP4 with a meta box and no moov, by its brands no HEIF,
+  // is one whose index is gone.
+  const meta = box("meta", Buffer.alloc(4), box("hdlr", Buffer.alloc(8), brands("pict"), Buffer.alloc(13)));
+  const still = put("still.avif", box("ftyp", brands("avif", "\0\0\0\0", "avif", "mif1", "miaf")), meta, box("mdat", Buffer.alloc(32)));
+  assert.deepEqual(read("heif", "4.4", still), { video: "still.avif is a still picture, not a video", sound: `${still} has no audio stream` });
+  const notStill = put("meta.mp4", ftyp, meta, box("mdat", Buffer.alloc(32)));
+  assert.deepEqual(read("heif", "4.4", notStill), index(notStill));
+  // ffmpeg 9 finds no index behind an ID3v2 tag, and says so of a whole
+  // file just as of one with none, as its index is gone.
+  const moov = box("moov", box("mvhd", Buffer.alloc(100)));
+  for (const tags of [[id3()], [id3(), id3()], [id3(0x10)]]) {
+    const whole = put("tagged whole.mp4", ...tags, ftyp, box("mdat", Buffer.alloc(32)), moov);
+    assert.deepEqual(read("tagged-index", "9.0", whole), both(`Cannot read ${whole}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag`));
+    // An index ffmpeg finds and cannot read is damaged, tag or not.
+    assert.deepEqual(read("cut-index", "9.0", whole), index(whole));
+  }
+  const gone = put("tagged gone.mp4", id3(), ftyp, box("mdat", Buffer.alloc(32)));
+  assert.deepEqual(read("tagged-index", "9.0", gone), index(gone));
+});
+
+test("the file's own boxes tell an MP4's index cut short as ffmpeg would read them: a moov that runs past the end of the file is cut, unless all it lacks is part of its last box, a udta, and sizes of 8 bytes and of 0 are read; a kind ffmpeg guesses an MP4 by counts only in the first MiB, past ID3v2 tags; a HEIF picture is told by its brands", () => {
+  const { boxes } = require("../skills/musicfit/scripts/lib/unread");
+  const folder = outDir("own-boxes");
+  fs.mkdirSync(folder, { recursive: true });
+  const box = (kind, ...body) => {
+    const inside = Buffer.concat(body);
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(8 + inside.length);
+    return Buffer.concat([size, Buffer.from(kind, "latin1"), inside]);
+  };
+  const layout = (...parts) => {
+    const file = path.join(folder, "file.mp4");
+    fs.writeFileSync(file, Buffer.concat(parts));
+    return boxes(file);
+  };
+  const ftyp = box("ftyp", Buffer.from("isom\0\0\x02\0isomiso2mp41", "latin1"));
+  const mdat = box("mdat", Buffer.alloc(64));
+  const trak = box("trak", box("tkhd", Buffer.alloc(84)));
+  const udta = box("udta", box("meta", Buffer.alloc(40)));
+  const mvhd = box("mvhd", Buffer.alloc(100));
+  const whole = box("moov", mvhd, trak, udta);
+  const cut = (bytes, short) => bytes.subarray(0, bytes.length - short);
+  const index = (bytes) => layout(ftyp, mdat, bytes).index;
+  assert.equal(index(whole), "whole");
+  // Short of a part of its tags only, or of all its tags but their header.
+  assert.equal(index(cut(whole, 8)), "whole");
+  assert.equal(index(cut(whole, udta.length - 8)), "whole");
+  // Short of more: its tags whole and gone, a trak part way, a udta that
+  // is not its last box.
+  assert.equal(index(cut(whole, udta.length)), "cut");
+  assert.equal(index(cut(whole, udta.length + 20)), "cut");
+  assert.equal(index(cut(box("moov", mvhd, udta, trak), trak.length + 8)), "cut");
+  // A moov of 64-bit size, and one of size 0, which runs to the end.
+  const large = Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from("moov", "latin1"), Buffer.from([0, 0, 0, 0, 0, 0, 0, 16 + mvhd.length]), mvhd]);
+  assert.equal(index(large), "whole");
+  assert.equal(index(cut(large, 4)), "cut");
+  assert.equal(index(Buffer.concat([Buffer.alloc(4), Buffer.from("moov", "latin1"), mvhd])), "whole");
+  assert.equal(layout(ftyp, mdat).index, null);
+  // The kinds ffmpeg guesses an MP4 by, past ID3v2 tags, in the first MiB.
+  const tag = Buffer.concat([Buffer.from("ID3", "latin1"), Buffer.from([4, 0, 0, 0, 0, 0, 4]), Buffer.alloc(4)]);
+  const short = cut(whole, udta.length + 20);
+  assert.deepEqual(layout(tag, ftyp, mdat, short), { mp4: true, tagged: true, index: "cut", picture: false });
+  assert.deepEqual(layout(box("abcd", Buffer.alloc((1 << 20) - 8)), ftyp, mdat, short), { mp4: false, tagged: false, index: null, picture: false });
+  assert.deepEqual(layout(Buffer.from("some notes\n")), { mp4: false, tagged: false, index: null, picture: false });
+  // An ID3v2 tag as ffmpeg knows one: a version of 0xff, or a size byte
+  // with its top bit set, makes it none, and a box that declares fewer than
+  // its own 8 bytes is none either, whatever kind it names.
+  const notTag = (bytes, at) => layout(bytes, Buffer.alloc(at - bytes.length), ftyp, mdat).mp4;
+  assert.equal(notTag(Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0x84]), 142), false);
+  assert.equal(notTag(Buffer.from([0x49, 0x44, 0x33, 0xff, 0, 0, 0, 0, 0, 4]), 14), false);
+  assert.equal(notTag(Buffer.from([0x49, 0x44, 0x33, 4, 0xff, 0, 0, 0, 0, 4]), 14), false);
+  assert.equal(notTag(Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 4]), 14), true);
+  assert.equal(layout(Buffer.from([0, 0, 0, 4]), Buffer.from("ftyp", "latin1")).mp4, false);
+  // Inside the moov too: a box of fewer than 8 bytes before a udta the
+  // file ends in makes the index cut, not short of its tags only.
+  const odd = Buffer.concat([Buffer.from([0, 0, 0, 4]), udta]);
+  const moovOdd = Buffer.concat([Buffer.alloc(4), Buffer.from("moov", "latin1"), mvhd, odd]);
+  moovOdd.writeUInt32BE(moovOdd.length);
+  assert.equal(index(cut(moovOdd, 8)), "cut");
+  // A HEIF picture: its brands, a meta box and no moov.
+  const meta = box("meta", Buffer.alloc(32));
+  const heif = (brand) => layout(box("ftyp", Buffer.from(`${brand}\0\0\0\0${brand}miaf`, "latin1")), meta, mdat).picture;
+  assert.deepEqual(["avif", "heic", "mif1", "isom"].map(heif), [true, true, true, false]);
+  // Its minor version, which comes after its major brand, is no brand.
+  assert.equal(layout(box("ftyp", Buffer.from("isommif1isom", "latin1")), meta, mdat).picture, false);
+  assert.equal(layout(box("ftyp", Buffer.from("avif\0\0\0\0avifmif1", "latin1")), meta, mdat, whole).picture, false);
+  // Only a regular file is read.
+  assert.deepEqual(boxes(folder), { mp4: false, tagged: false, index: null, picture: false });
 });
 
 test("a file that is no video is not taken for an MP4 cut short when its name, the name of its folder or its tags hold ffmpeg's words for one", async () => {

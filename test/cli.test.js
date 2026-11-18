@@ -591,6 +591,48 @@ test("a file that is not audio gets a clear error", () => {
   assert.match(run.stderr, /Cannot read|no audio/);
 });
 
+test("a track or a voice cut short is said to be: an M4A cut before its index or inside it; a WAV cut in its header, and three bytes of text named .mkv, are told as files ffmpeg cannot read", () => {
+  const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+  const folder = path.join(dir, "cut-tracks");
+  fs.mkdirSync(folder, { recursive: true });
+  const at = (name) => path.join(folder, name);
+  const make = (name, ...args) => {
+    const made = spawnSync(FFMPEG, ["-hide_banner", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12", ...args, at(name)], { encoding: "utf8" });
+    assert.equal(made.status, 0, made.stderr);
+    return fs.readFileSync(at(name));
+  };
+  const cut = (name, bytes, size) => {
+    fs.writeFileSync(at(name), bytes.subarray(0, size));
+    return at(name);
+  };
+  // An M4A as ffmpeg writes one, its index after its sound.
+  const song = make("song.m4a", "-c:a", "aac", "-b:a", "128k");
+  const index = song.indexOf("moov", 0, "latin1") - 4;
+  assert.ok(index > 0);
+  fs.writeFileSync(at("notes.mkv"), "ok\n");
+  const noIndex = "it is cut short or damaged, so ffmpeg finds no index in it";
+  const unknown = "it is not a kind of file ffmpeg reads, or it is cut short or damaged";
+  const cases = [
+    [cut("in its sound.m4a", song, Math.floor(index / 2)), new RegExp(`^${noIndex}$`)],
+    [cut("in its index.m4a", song, index + 40), new RegExp(`^${noIndex}$`)],
+    [cut("in its stsz.m4a", song, song.indexOf("stsz", index, "latin1") + 30), new RegExp(`^${noIndex}$`)],
+    [cut("in its chunk offsets.m4a", song, song.indexOf("stco", index, "latin1") + 20), new RegExp(`^${noIndex}$`)],
+    [cut("in its header.wav", fs.readFileSync(fixture("house").file), 30), new RegExp(`^${unknown}$`)],
+    [at("notes.mkv"), new RegExp(`^${unknown}$`)],
+  ];
+  const told = (run, file, why) => {
+    assert.equal(run.status, 1, run.stderr);
+    const last = run.stderr.split("\n").filter(Boolean).pop();
+    assert.ok(last.startsWith(`musicfit: Cannot read ${file}: `), `${file}: ${run.stderr}`);
+    assert.match(last.slice(`musicfit: Cannot read ${file}: `.length), why, file);
+  };
+  for (const [file, why] of cases) {
+    told(spawnSync(process.execPath, [CLI, file, "--length", "10", "--out", at(`out ${path.basename(file)}`)], { encoding: "utf8" }), file, why);
+    told(spawnSync(process.execPath, [CLI, fixture("house").file, "--length", "10", "--voice", file, "--out", at(`voice ${path.basename(file)}`)], { encoding: "utf8" }), file, why);
+  }
+  assert.deepEqual(fs.readdirSync(folder).filter((name) => name.startsWith("out ") || name.startsWith("voice ")), []);
+});
+
 test("a video with no sound says so", () => {
   const film = path.join(dir, "silent-film.mp4");
   const made = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=32x32:d=0.5", "-c:v", "mpeg4", film], { encoding: "utf8" });

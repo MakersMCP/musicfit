@@ -1049,57 +1049,111 @@ test("a run that follows a refusal's offer, its other options as they were, is t
   assert.equal(runs, 3);
 });
 
-test("an MP4 or a MOV cut short inside its index is said to be, wherever in the index it stops, also behind an ID3v2 tag or a box of a kind no format knows, and one that lacks only the end of its index goes through", () => {
-  const refused = (video, what) => {
+// The boxes at the top of an MP4 or a MOV, each as { kind, at, size }.
+function topBoxes(bytes) {
+  const found = [];
+  for (let at = 0; at + 8 <= bytes.length; ) {
+    const size = bytes.readUInt32BE(at);
+    found.push({ kind: bytes.toString("latin1", at + 4, at + 8), at, size });
+    if (size < 8) break;
+    at += size;
+  }
+  return found;
+}
+
+// An ID3v2.4 tag with one title frame, as a tagger puts at a file's start.
+function id3(flags = 0, footer = false) {
+  const frame = Buffer.concat([Buffer.from("TIT2", "latin1"), Buffer.from([0, 0, 0, 6, 0, 0, 3]), Buffer.from("title", "latin1")]);
+  const head = (magic) => Buffer.concat([Buffer.from(magic, "latin1"), Buffer.from([4, 0, flags, 0, 0, 0, frame.length])]);
+  return Buffer.concat([head("ID3"), frame, footer ? head("3DI") : Buffer.alloc(0)]);
+}
+
+test("an MP4 or a MOV cut short inside its index is said to be, wherever in the index it stops, on every ffmpeg, also behind an ID3v2 tag, a box of a kind no format knows or a MOV's wide box with no ftyp before it, and one that lacks only the end of its tags goes through", () => {
+  const refused = (video) => {
     const out = at(`refused-${path.basename(video)}`);
     const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--out", out]);
     assert.equal(run.status, 1, `${video}: ${run.stderr}`);
-    assert.equal(run.stderr, `musicfit: Cannot read ${video}: it is cut short or damaged, so ffmpeg finds no ${what} in it\n`, video);
+    assert.equal(run.stderr, `musicfit: Cannot read ${video}: it is cut short or damaged, so ffmpeg finds no index in it\n`, video);
     assert.ok(!fs.existsSync(out), video);
   };
   for (const ext of ["mp4", "mov"]) {
-    const whole = film(ext === "mp4" ? "film12" : "film12mov", { ext });
+    // A picture and a sound of its own, the index after them, as ffmpeg
+    // writes one: the picture's part of it first, then the sound's.
+    const whole = film(`film12-sound-${ext}`, { sound: effects(), ext });
     const bytes = fs.readFileSync(whole);
-    // The top-level boxes, to find the index, which comes last in this file.
-    let moov = 0;
-    while (bytes.toString("latin1", moov + 4, moov + 8) !== "moov") moov += bytes.readUInt32BE(moov);
-    const inside = (tag, past) => bytes.indexOf(tag, moov, "latin1") + past;
+    const moov = topBoxes(bytes).find((box) => box.kind === "moov");
+    const box = (kind, from) => bytes.indexOf(kind, from, "latin1") - 4;
+    const picture = box("trak", moov.at);
+    const sound = box("trak", picture + 8);
+    const offsets = box("stco", picture);
     const cuts = [
-      // Before anything of it is read: no stream is listed.
-      ["just inside", moov + 10, "streams"],
-      // A stream ffmpeg knows nothing of yet.
-      ["in tkhd", inside("tkhd", 20), "streams"],
-      // A picture known only by its handler: ffmpeg 4.4 will not copy it, ffmpeg 8 copies no frame of it.
-      ["in hdlr", inside("hdlr", 30), "frames"],
-      // Past that, ffmpeg gives up on the header.
-      ["in stsd", inside("stsd", 12), "index"],
-      ["in stts", inside("stts", 6), "index"],
-      ["in stsz", inside("stsz", 20), "index"],
+      ["just inside", moov.at + 10],
+      ["in tkhd", box("tkhd", picture) + 24],
+      ["in hdlr", box("hdlr", picture) + 34],
+      ["in stsd", box("stsd", picture) + 16],
+      // ffmpeg 4.4 will not copy a picture whose size it does not know.
+      ["where stts starts", box("stts", picture)],
+      ["in stts", box("stts", picture) + 10],
+      ["in stsz", box("stsz", picture) + 24],
+      // ffmpeg 8 and 9 say nothing of these: they read a cut among the
+      // picture's chunk offsets as a shorter video, and one before the
+      // sound's part of the index as a video with no sound of its own.
+      ["in the picture's chunk offsets", offsets + Math.floor(bytes.readUInt32BE(offsets) / 2)],
+      ["where the sound's starts", sound],
+      ["in the sound's hdlr", box("hdlr", sound) + 34],
     ];
-    for (const [where, size, what] of cuts) {
+    assert.ok(picture > moov.at && sound > offsets && offsets > picture, `${whole}: ${picture} ${offsets} ${sound}`);
+    for (const [where, size] of cuts) {
       const video = at(`cut-index ${where}.${ext}`);
       fs.writeFileSync(video, bytes.subarray(0, size));
-      refused(video, what);
+      refused(video);
     }
     // ffmpeg has all it needs: the last bytes are the file's tags.
     const nearly = at(`cut-index tags.${ext}`);
     fs.writeFileSync(nearly, bytes.subarray(0, bytes.length - 8));
-    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", nearly, "--out", at(`index-tags-fit-${ext}`)]);
+    const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", nearly, "--video-sound", "keep", "--out", at(`index-tags-fit-${ext}`)]);
     assert.equal(run.status, 0, run.stderr);
   }
-  // ffmpeg passes over an ID3v2 tag at the start of a file, and over a box
-  // of a kind it does not know, as it guesses what the file is.
+  // ffmpeg passes over ID3v2 tags at the start of a file, and over a box
+  // of a kind it does not know, as it guesses what the file is; a MOV may
+  // start with its wide box.
   const bytes = fs.readFileSync(film("film12", {}));
-  let moov = 0;
-  while (bytes.toString("latin1", moov + 4, moov + 8) !== "moov") moov += bytes.readUInt32BE(moov);
-  const stsd = bytes.subarray(0, bytes.indexOf("stsd", moov, "latin1") + 12);
-  const frame = Buffer.concat([Buffer.from("TIT2", "latin1"), Buffer.from([0, 0, 0, 6, 0, 0, 3]), Buffer.from("title", "latin1")]);
+  const moov = topBoxes(bytes).find((box) => box.kind === "moov");
+  const stsd = bytes.subarray(0, bytes.indexOf("stsd", moov.at, "latin1") + 12);
   const tagged = at("cut-index tagged.mp4");
-  fs.writeFileSync(tagged, Buffer.concat([Buffer.from("ID3", "latin1"), Buffer.from([4, 0, 0, 0, 0, 0, frame.length]), frame, stsd]));
-  refused(tagged, "index");
+  fs.writeFileSync(tagged, Buffer.concat([id3(), stsd]));
+  refused(tagged);
   const boxed = at("cut-index boxed.mp4");
   fs.writeFileSync(boxed, Buffer.concat([Buffer.from([0, 0, 0, 16]), Buffer.from("abcd", "latin1"), Buffer.alloc(8), stsd]));
-  refused(boxed, "index");
+  refused(boxed);
+  const mov = fs.readFileSync(film("film12mov", { ext: "mov" }));
+  const [ftyp] = topBoxes(mov);
+  assert.equal(ftyp.kind, "ftyp");
+  const wide = at("cut-index wide.mov");
+  fs.writeFileSync(wide, mov.subarray(ftyp.size, mov.indexOf("stsd", topBoxes(mov).find((box) => box.kind === "moov").at, "latin1") + 12));
+  assert.equal(fs.readFileSync(wide).toString("latin1", 4, 8), "wide");
+  refused(wide);
+});
+
+test("a HEIF picture, as an AVIF or a HEIC is, is a still picture, also on ffmpeg 4.4, which reads no HEIF, and as the track it has no audio stream", () => {
+  const avif = at("still.avif");
+  fs.copyFileSync(path.join(__dirname, "fixtures", "still.avif"), avif);
+  const run = cli([fixture("house").file, "--length", "12", "--video", avif, "--out", at("refused-still-avif")]);
+  assert.equal(run.status, 1, run.stderr);
+  assert.equal(run.stderr, "musicfit: still.avif is a still picture, not a video\n");
+  const track = cli([avif, "--length", "12", "--out", at("still-avif-track")]);
+  assert.equal(track.status, 1, track.stderr);
+  assert.equal(track.stderr.split("\n").filter(Boolean).pop(), `musicfit: ${avif} has no audio stream`);
+});
+
+test("a whole MP4 behind an ID3v2 tag is fitted by an ffmpeg that reads past the tag, and an ffmpeg that does not, as ffmpeg 9 does not, has it told so, never that it is cut short", () => {
+  const tagged = at("whole tagged.mp4");
+  fs.writeFileSync(tagged, Buffer.concat([id3(), fs.readFileSync(film("film12", {}))]));
+  const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", tagged, "--out", at("whole-tagged-fit")]);
+  if (/moov atom not found/.test(said(tagged))) {
+    assert.equal(run.status, 1, run.stderr);
+    assert.equal(run.stderr, `musicfit: Cannot read ${tagged}: ffmpeg finds no index behind the ID3v2 tag it starts with: give a copy of it without the tag\n`);
+  } else assert.equal(run.status, 0, run.stderr);
 });
 
 test("a video musicfit made is refused as --video while its sound would be laid in, naming the video it was made from when its cues.json is beside it, and taken with --video-sound drop", () => {

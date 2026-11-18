@@ -12,6 +12,7 @@ const path = require("node:path");
 const { getSystemErrorMap } = require("node:util");
 const { spawn } = require("node:child_process");
 const { CHUNK, breathe } = require("./breathe");
+const { boxes, ownLines, noIndex, indexError, unknown } = require("./unread");
 
 const RATE = 48000;
 
@@ -569,11 +570,17 @@ async function floats(chunks) {
 // second on, for a video's own sound from its picture's first frame: cut
 // where the sound starts before it, silence where the sound starts after it
 // or has a gap, so a second into the sound is a second into the picture.
+// Refused when it cannot be read, and when it is an MP4, a MOV or an M4A
+// whose index is cut short, by ffmpeg's lines or, as ffmpeg may read part
+// of one and say nothing, by its own boxes.
 async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0 } = {}) {
   const timeline = from === null ? [] : ["-copyts"];
   const align = from === null ? [] : ["-af", `aresample=${rate}:async=1:first_pts=${Math.round(from * rate)}`];
+  const at = where(file);
+  const layout = boxes(at);
+  if (layout.index === "cut") throw indexError(file, "cut");
   try {
-    const { chunks } = await run(["-v", "error", ...timeline, "-i", where(file), "-map", `0:a:${stream}`, "-vn", ...align, "-ac", String(channels), "-ar", String(rate), "-f", "f32le", "pipe:1"]);
+    const { chunks } = await run(["-v", "error", ...timeline, "-i", at, "-map", `0:a:${stream}`, "-vn", ...align, "-ac", String(channels), "-ar", String(rate), "-f", "f32le", "pipe:1"]);
     const samples = await floats(chunks);
     if (!samples.length) throw new Error(`${file} has no audio`);
     return samples;
@@ -581,11 +588,23 @@ async function decode(file, { rate = RATE, channels = 2, from = null, stream = 0
     if (err.unstarted) throw err;
     // ffmpeg says why early and sums up last, so all it said is searched.
     const said = err.stderr || err.message;
-    if (/matches no streams/.test(said)) throw new Error(`${file} has no audio stream`);
     if (/No such file|does not exist/.test(said) && gone(file)) throw new Error(`Cannot read ${file}: no such file`);
-    if (/Invalid data found/.test(said)) throw new Error(`Cannot read ${file}: it is not a kind of file ffmpeg reads, or it is cut short or damaged`);
-    throw err;
+    throw unreadSound(file, said, layout) || err;
   }
+}
+
+// Why `file` cannot be read as a sound, from what ffmpeg printed when it
+// failed, `said`, and from the file's own boxes, `layout` (see boxes() in
+// unread.js): an Error, or null when ffmpeg's lines name none of these.
+// Only ffmpeg's own lines are read for them, with the file's name taken
+// out.
+function unreadSound(file, said, layout) {
+  const own = ownLines(said, where(file));
+  const index = noIndex(own, layout);
+  if (index === "picture" || /matches no streams/.test(own)) return new Error(`${file} has no audio stream`);
+  if (index) return indexError(file, index);
+  if (/Invalid data found/.test(own)) return unknown(file);
+  return null;
 }
 
 // Writes a stereo sound as a 24-bit WAV. bitexact leaves out the
@@ -627,4 +646,4 @@ async function measureFile(file) {
   return summary(stderr);
 }
 
-module.exports = { RATE, decode, encodeWav, fromHere, gone, measure, measureFile, quoted, ready, run, reason, stopChildren, where };
+module.exports = { RATE, decode, unreadSound, encodeWav, fromHere, gone, measure, measureFile, quoted, ready, run, reason, stopChildren, where };

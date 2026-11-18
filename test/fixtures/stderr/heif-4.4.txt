@@ -1,0 +1,2 @@
+[mov,mp4,m4a,3gp,3g2,mj2 @ 0x55e43576fe80] moov atom not found
+still.avif: Invalid data found when processing input

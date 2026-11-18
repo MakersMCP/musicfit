@@ -1,0 +1,4 @@
+[in#0 @ 0x57204d17cc40] moov atom not found
+[in#0 @ 0x57204d17c940] Error opening input: Invalid data found when processing input
+Error opening input file tagged.mp4.
+Error opening input files: Invalid data found when processing input
