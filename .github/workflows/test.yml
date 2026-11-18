@@ -6,9 +6,8 @@ on:
 
 jobs:
   test:
-    # Ubuntu 22.04's ffmpeg is 4.4, the oldest musicfit works with and the
-    # one the hosted service runs, Ubuntu 24.04's is 6.1, and ubuntu-latest
-    # is the newest Ubuntu GitHub runs.
+    # Ubuntu 22.04's ffmpeg is 4.4, the oldest musicfit works with, Ubuntu
+    # 24.04's is 6.1, and ubuntu-latest is the newest Ubuntu GitHub runs.
     strategy:
       fail-fast: false
       matrix:
