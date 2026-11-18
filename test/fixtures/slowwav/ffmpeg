@@ -2,9 +2,11 @@
 # Runs the ffmpeg on PATH, but before the call that writes a 24-bit WAV it
 # writes its process number to $MUSICFIT_TEST_MARK and waits, so a test can
 # stop the run while it writes, and see whether this process outlives it.
+# The number is written under another name and moved into place, so a test
+# that stops the run once the file is there never finds it empty.
 for arg do
   if [ "$arg" = pcm_s24le ]; then
-    echo $$ > "$MUSICFIT_TEST_MARK"
+    echo $$ > "$MUSICFIT_TEST_MARK.part" && mv "$MUSICFIT_TEST_MARK.part" "$MUSICFIT_TEST_MARK"
     sleep 10
   fi
 done
