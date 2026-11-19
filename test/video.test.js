@@ -1496,10 +1496,15 @@ test("a WAV or a Matroska file behind an ID3v2 tag is read whole where ffmpeg re
   }
 });
 
-test("a Matroska film behind two ID3v2 tags, which ffmpeg 4.4 and 8 can take for a bare MPEG-4 picture with no sound, goes on with none of its own sound as the README's Limits say, or is refused with the tag named where ffmpeg finds no data it reads in it, as 9 does, on every ffmpeg", () => {
-  for (const doc of ["README.md", path.join("skills", "musicfit", "SKILL.md")]) {
+test("a Matroska film behind two ID3v2 tags, which ffmpeg 4.4 and 8 can take for a bare MPEG-4 picture with no sound, goes on with none of its own sound as the README's Limits say, or is refused with the tag named where ffmpeg finds no data it reads in it, as 9 does, and an ASF film behind two tags can also read as another length and be refused with that length to use, which SKILL.md has an assistant ask the user about first, on every ffmpeg", () => {
+  const another = {
+    "README.md": "so a video can read as another length than its own and be refused with that length to use,",
+    [path.join("skills", "musicfit", "SKILL.md")]: "a video can then read as another length than its own and be refused with that length to use, so before you pass on a length a refusal gives, ask the user whether the video is that long.",
+  };
+  for (const [doc, length] of Object.entries(another)) {
     const text = fs.readFileSync(path.join(__dirname, "..", doc), "utf8");
-    assert.ok(text.includes("ffmpeg 4.4 and 8 can take a file for another kind, as an AVI or a Matroska film for a bare MPEG-4 picture with no sound"), doc);
+    assert.ok(text.includes("ffmpeg 4.4 and 8 can take a file for another kind, as an AVI, an ASF or a Matroska film for a bare MPEG-4 picture with no sound"), doc);
+    assert.ok(text.includes(length), doc);
     assert.ok(text.includes("a copy without the tags"), doc);
   }
   const behind = (file) => `musicfit: Cannot read ${file}: it starts with an ID3v2 tag, which ffmpeg 9 does not read past in many kinds of file, or it is not a kind of file ffmpeg reads, or it is cut short or damaged: give a whole copy of it without the tag`;
@@ -1519,6 +1524,33 @@ test("a Matroska film behind two ID3v2 tags, which ffmpeg 4.4 and 8 can take for
   const track = cli([twice, "--length", "10", "--out", at("tagged-twice-track")]);
   assert.equal(track.status, 1, track.stderr);
   assert.equal(track.stderr.split("\n").filter(Boolean).pop(), none ? behind(twice) : `musicfit: ffmpeg finds no sound stream in ${twice}`);
+  // An ASF film of 12 s behind two tags. Taken for a bare MPEG-4 picture,
+  // its bytes give the picture's times, so it can read as another length,
+  // and the refusal then offers that length: ffmpeg 8.0.1 reads the one it
+  // makes here as 248.80 s long, and 4.4.2 the one it makes as 12 s long,
+  // so that one goes on with none of its own sound. ffmpeg 9 finds no data
+  // in it.
+  const asf = at("film12-sound.asf");
+  ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", effects(), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "wmav2", "-b:a", "128k", "-t", "12", "-f", "asf", asf]);
+  const asfTwice = at("tagged twice.asf");
+  fs.writeFileSync(asfTwice, Buffer.concat([id3(), id3(), fs.readFileSync(asf)]));
+  const asfVideo = cli([file, "--length", "12", "--hit", "8", "--video", asfTwice, "--video-sound", "keep", "--out", at("tagged-twice-asf-fit")]);
+  if (/Invalid data found/.test(said(asfTwice))) {
+    assert.equal(asfVideo.status, 1, asfVideo.stderr);
+    assert.equal(asfVideo.stderr.split("\n").filter(Boolean).pop(), behind(asfTwice));
+  } else {
+    assert.match(said(asfTwice), /detected only with low score/);
+    // Taken for another kind, it never fits as the film it is.
+    assert.ok(!asfVideo.stdout.includes("with the music and its own sound"), asfVideo.stdout);
+    const length = /^musicfit: tagged twice\.asf is (\d+\.\d\d) s long\b.* and --length is 12\.00 s: give --length (\d+(?:\.\d+)?)\b/m.exec(asfVideo.stderr);
+    if (length) {
+      assert.equal(asfVideo.status, 1, asfVideo.stderr);
+      assert.ok(Math.abs(Number(length[1]) - 12) > 0.04, asfVideo.stderr);
+      assert.ok(Math.abs(Number(length[2]) - Number(length[1])) < 0.01, asfVideo.stderr);
+    } else if (asfVideo.status === 0) {
+      assert.ok(asfVideo.stdout.includes("video.mp4 is tagged twice.asf with the music (ffmpeg reads no sound of its own in it)"), asfVideo.stdout);
+    }
+  }
 });
 
 test("a video whose own sound is cut short is refused when that sound would be laid in, also when its name holds the words for a sound that has none, and goes with --video-sound drop", () => {
