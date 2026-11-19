@@ -18,6 +18,7 @@ test("the skill folder carries its own version, the same as the package's and ev
   const version = require("../skills/musicfit/scripts/lib/version");
   assert.equal(version, require("../package.json").version);
   assert.equal(version, require("../package-lock.json").version);
+  assert.equal(version, require("../package-lock.json").packages[""].version);
   assert.equal(version, require("../.claude-plugin/marketplace.json").plugins[0].version);
   assert.equal(version, require("../.codex-plugin/plugin.json").version);
   assert.equal(version, require("../plugin.json").version);
