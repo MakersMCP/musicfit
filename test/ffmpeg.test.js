@@ -259,11 +259,14 @@ test("an ffmpeg that cannot be started again later in a run is told as one, neve
   const { file } = fixture("house");
   const { FFMPEG_PATH, ...rest } = process.env;
   // The track is read first, or with --video the video, once ffmpeg has
-  // answered its version; video.mp4 is read back once it is written.
+  // answered its version; a frame of the video's picture is copied into an
+  // MP4 once its packets are read; video.mp4 is read back once it is
+  // written.
   for (const [n, gone, args] of [
     [1, "-version", []],
     [2, "-version", ["--video", film]],
     [3, "+faststart", ["--video", film]],
+    [4, "framecrc", ["--video", film]],
   ]) {
     // A wrapper that runs ffmpeg and takes itself away after the call that
     // has `gone` in it, in a folder whose name holds the words a failed read
