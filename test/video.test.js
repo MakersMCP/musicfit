@@ -1779,12 +1779,21 @@ test("a video's own sound is read on its timeline only up to two seconds past th
     assert.deepEqual(cuesOf(out).warnings.filter((w) => /past the end/.test(w)), [runs], name);
   }
   // The README and SKILL.md say where a voice is read to its end and where
-  // only that far.
+  // only that far: past the end of the picture, which the fit is within a
+  // frame of. A damaged video can read as a few frames hours apart, a frame
+  // hours long, and the sound is then made room for over all those hours,
+  // which their Limits say, quoting the words musicfit stops with when the
+  // system has no memory to start ffmpeg with.
   assert.equal(require("../skills/musicfit/scripts/lib/video").PAST, 2);
+  const audio = fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "scripts", "lib", "audio.js"), "utf8");
+  assert.ok(audio.includes('ENOMEM: "not enough memory. ') && audio.includes("musicfit could not start ffmpeg: ${SHORT[error.code]}."));
   for (const doc of ["README.md", path.join("skills", "musicfit", "SKILL.md")]) {
     const text = fs.readFileSync(path.join(__dirname, "..", doc), "utf8");
     assert.ok(text.includes("a voice, which is read to its end even where it runs on past the fit, unless it is the video's own sound:"), doc);
-    assert.ok(text.includes("The video's own sound, also when it is the voice, is read only up to two seconds past the fit."), doc);
+    assert.ok(text.includes("The video's own sound, also when it is the voice, is read only up to two seconds past the end of its picture, which the fit matches to a frame."), doc);
+    assert.ok(!text.includes("two seconds past the fit"), doc);
+    assert.ok(text.includes("A damaged video can also read as a picture of a few frames hours apart,"), doc);
+    assert.ok(text.includes('as with "could not start ffmpeg: not enough memory",'), doc);
   }
 });
 
