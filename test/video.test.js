@@ -1526,10 +1526,12 @@ test("a Matroska film behind two ID3v2 tags, which ffmpeg 4.4 and 8 can take for
   assert.equal(track.stderr.split("\n").filter(Boolean).pop(), none ? behind(twice) : `musicfit: ffmpeg finds no sound stream in ${twice}`);
   // An ASF film of 12 s behind two tags. Taken for a bare MPEG-4 picture,
   // its bytes give the picture's times, so it can read as another length,
-  // and the refusal then offers that length: ffmpeg 8.0.1 reads the one it
-  // makes here as 248.80 s long, and 4.4.2 the one it makes as 12 s long,
-  // so that one goes on with none of its own sound. ffmpeg 9 finds no data
-  // in it.
+  // and the refusal then offers that length. The ffmpeg under test makes
+  // the film here, so the test holds that length on 8.0.1 alone, which
+  // reads the one it makes as 248.80 s long: 4.4.2 reads the one 8.0.1
+  // makes so too, but the one it makes as 12 s long, and that one goes on
+  // with none of its own sound. ffmpeg 9 finds no data in it. Any other
+  // outcome fails.
   const asf = at("film12-sound.asf");
   ffmpeg(["-f", "lavfi", "-i", "testsrc2=s=160x96:r=25:d=12", "-i", effects(), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "mpeg4", "-q:v", "6", "-c:a", "wmav2", "-b:a", "128k", "-t", "12", "-f", "asf", asf]);
   const asfTwice = at("tagged twice.asf");
@@ -1547,7 +1549,8 @@ test("a Matroska film behind two ID3v2 tags, which ffmpeg 4.4 and 8 can take for
       assert.equal(asfVideo.status, 1, asfVideo.stderr);
       assert.ok(Math.abs(Number(length[1]) - 12) > 0.04, asfVideo.stderr);
       assert.ok(Math.abs(Number(length[2]) - Number(length[1])) < 0.01, asfVideo.stderr);
-    } else if (asfVideo.status === 0) {
+    } else {
+      assert.equal(asfVideo.status, 0, asfVideo.stderr);
       assert.ok(asfVideo.stdout.includes("video.mp4 is tagged twice.asf with the music (ffmpeg reads no sound of its own in it)"), asfVideo.stdout);
     }
   }
