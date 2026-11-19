@@ -2244,13 +2244,70 @@ test("a whole video whose name or a tag's key holds a line like ffmpeg's for a p
   // picture's, as the README's Limits say: as HEVC, which video.mp4 tags
   // hvc1, so the copy of this MPEG-4 picture into it fails, and nothing is
   // written.
-  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("- A video whose name, or the key of one of its tags, holds a line break and then words like those ffmpeg lists a stream with is read by those words as well, as ffmpeg prints a name and a key as they are: its picture can be taken for another kind, so that the run fails as it writes `video.mp4`"));
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("its picture can be taken for another kind, so that the run fails as it writes `video.mp4`, and its sound and subtitle streams can be counted wrong."));
   const hevc = at("keyed hevc.mp4");
   ffmpeg(["-i", whole, "-c", "copy", "-movflags", "use_metadata_tags", "-metadata", "note\n    Stream #0:0: Video: hevc (Main), yuv420p, 160x96=x", hevc]);
   const out = at("keyed-hevc-fit");
   const run = cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", hevc, "--out", out]);
   assert.equal(run.status, 1, run.stderr);
   assert.ok(!fs.existsSync(out), run.stderr);
+});
+
+test("a whole video whose name, a folder on its path, or the key or the value of one of its tags holds a line break and then words like ffmpeg's own can be refused as cut short or damaged or as one musicfit made, go on with none of its own sound, or have its sound and subtitle streams counted wrong, as the README's Limits and SKILL.md say, on every ffmpeg", () => {
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8").includes("- A video whose name, a folder on its path, or the key or the value of one of its tags holds a line break can be read as another video than it is: ffmpeg prints names and tags among its own lines, so what follows a line break in them can read as a line of ffmpeg's own. A whole video can then be refused as cut short or damaged, or as one musicfit made, its own sound can be left out as one ffmpeg reads none of, its picture can be taken for another kind, so that the run fails as it writes `video.mp4`, and its sound and subtitle streams can be counted wrong. Rename the file or the folder, or give a copy without such tags.\n"));
+  assert.ok(fs.readFileSync(path.join(__dirname, "..", "skills", "musicfit", "SKILL.md"), "utf8").includes("- A video whose name, a folder on its path, or the key or the value of one of its tags holds a line break can be read as another video than it is, as ffmpeg prints names and tags among its own lines: a whole one can be refused as cut short or damaged, or as one musicfit made, or go on with none of its own sound. When the path holds a line break, ask the user to rename the file or the folder; when it holds none and the user says the video plays whole, has sound of its own or was not made by musicfit, ask for a copy without its tags.\n"));
+  // A whole film whose own sound is two sound effects, which fits with them.
+  const whole = film("film25", { sound: effects() });
+  const fit = (video, out) => cli([fixture("house").file, "--length", "12", "--hit", "8", "--video", video, "--video-sound", "keep", "--out", at(out)]);
+  const plainRun = fit(whole, "line-break-whole-fit");
+  assert.equal(plainRun.status, 0, plainRun.stderr);
+  assert.ok(plainRun.stdout.includes("video.mp4 is film25.mp4 with the music and its own sound"), plainRun.stdout);
+  // ffmpeg prints a tag's key as it is, and again under the output it
+  // writes, so what follows a line break in it starts a line of its own.
+  const keyed = (name, key) => {
+    const file = at(name);
+    ffmpeg(["-i", whole, "-map", "0", "-c", "copy", "-movflags", "use_metadata_tags", "-metadata", `${key}=x`, file]);
+    return file;
+  };
+  // Refused as cut short or damaged, by a line like ffmpeg's for a broken packet.
+  const corrupt = keyed("keyed corrupt.mp4", "note\n[mov,mp4,m4a,3gp,3g2,mj2 @ 0x5a5a] Packet corrupt (stream 0, dts 0).");
+  const refused = fit(corrupt, "keyed-corrupt-fit");
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.equal(refused.stderr, `musicfit: Cannot read ${corrupt}: it is cut short or damaged (ffmpeg could read 300 frames, 12.00 s)\n`);
+  // Refused as one musicfit made, by a line like the comment it writes.
+  const made = at("keyed made.mp4");
+  ffmpeg(["-i", whole, "-map", "0", "-c", "copy", "-movflags", "use_metadata_tags", "-metadata", "a\n  comment=musicfit 1.0.0: a fitted track laid under this picture", made]);
+  const taken = fit(made, "keyed-made-fit");
+  assert.equal(taken.status, 1, taken.stderr);
+  assert.equal(taken.stderr, "musicfit: keyed made.mp4 is a video musicfit made, so its own sound has a fitted track in it already: give --video the video it was made from, or --video-sound drop to leave that sound out\n");
+  // With none of its own sound, by a line like the one that starts ffmpeg's
+  // output: a tag's key, a sound stream's language, which ffmpeg prints in
+  // that stream's line, the file's name and a folder on its path.
+  const silent = [keyed("keyed output.mp4", "note\nOutput #0, mp4, to 'x.mp4':")];
+  const language = at("language output.mkv");
+  ffmpeg(["-i", whole, "-map", "0", "-c", "copy", "-metadata:s:a:0", "language=eng\nOutput #0, null, to 'pipe:':", language]);
+  silent.push(language);
+  if (process.platform !== "win32") {
+    const named = at("odd\nOutput #0.mp4");
+    fs.copyFileSync(whole, named);
+    const folder = at("dir\nOutput #0");
+    fs.mkdirSync(folder, { recursive: true });
+    fs.copyFileSync(whole, path.join(folder, "film.mp4"));
+    silent.push(named, path.join(folder, "film.mp4"));
+  }
+  for (const [i, video] of silent.entries()) {
+    const run = fit(video, `line-break-silent-fit-${i}`);
+    assert.equal(run.status, 0, `${video}: ${run.stderr}`);
+    assert.ok(run.stdout.includes(`video.mp4 is ${path.basename(video)} with the music (ffmpeg reads no sound of its own in it)`), `${video}: ${run.stdout}`);
+  }
+  // A sound and a subtitle stream it does not have, by lines like the ones
+  // ffmpeg lists streams with.
+  const sounds = fit(keyed("keyed sounds.mp4", "note\n    Stream #0:7: Audio: aac (LC), 48000 Hz, stereo, fltp"), "keyed-sounds-fit");
+  assert.equal(sounds.status, 0, sounds.stderr);
+  assert.ok(sounds.stdout.includes("keyed sounds.mp4 has 2 sound streams and only the first is read"), sounds.stdout);
+  const subtitles = fit(keyed("keyed subtitles.mp4", "note\n    Stream #0:7: Subtitle: mov_text"), "keyed-subtitles-fit");
+  assert.equal(subtitles.status, 0, subtitles.stderr);
+  assert.ok(subtitles.stdout.includes("keyed subtitles.mp4 has a subtitle stream, which is not in video.mp4."), subtitles.stdout);
 });
 
 test("a picture that starts after the top of its file, as in a fragmented MP4 with B-frames, is measured from its first frame, and in video.mp4 it starts with the sound", async () => {
