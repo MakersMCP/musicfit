@@ -1,3 +1,5 @@
+<img src=".github/assets/icon.svg" alt="" width="72" height="72">
+
 # musicfit
 
 Fit a music track to a video cut. musicfit makes the track exactly as long as the video by cutting or looping whole bars, lands its drop on the second you pick, ends it on a beat, ducks it under a voice and sets its loudness. Give it the video too and it lays the track under it.
